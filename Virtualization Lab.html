@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Virtualization Lab</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2013-03-20T13:17:28-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1><a id="top">Oracle Solaris 11 Virtualization Lab</a></h1>
+
+<h2>Table of Contents</h2>
+
+<p>
+<a href="#V.1">Exercise V.1: Zones</a> </br>
+<a href="#V.2">Exercise V.2: Inside the Zone</a> </br>
+<a href="#V.3">Exercise V.3: Zone Cloning</a> </br>
+<a href="#V.4">Exercise V.4: Zone Monitoring</a> </br>
+<a href="#V.5">Exercise V.5: Resource Management </a>
+
+</p>
+<h2><a id="V.1">Exercise V.1: Zones </a></h2><p><strong>Task:</strong> Your development team wants a separate environment to develop their new application. 
+</p><p><strong>Lab:</strong> We are going to use Solaris virtualization technology called Solaris Zones. First, we have 
+to create a filesystem where all the zones will be located. In Solaris 11 it must be a ZFS filesystem. </p><pre>root@solaris:~# <kbd>zfs create -o mountpoint=/zones rpool/zones</kbd> </pre>
+
+<p>Check if it's created and mounted: </p><pre>root@solaris:~# <kbd>zfs list rpool/zones</kbd> NAME         USED  AVAIL  REFER  MOUNTPOINT
+rpool/zones   31K  7.92G    31K  /zones</pre>
+<p>Next, we will create a Virtual NIC to use in the zone:</p>
+
+<pre>
+root@solaris:~# <kbd>dladm create-vnic -l net0 vnic1</kbd>
+</pre>
+
+<p>If <code>vnic1</code> exists already (check with <code>dladm show-vnic</code>) please make sure there is no IP address assigned to it (<code>ipadm show-addr vnic1</code>). If it is, delete it, otherwise you won't be able to use this VNIC in a zone (<code>ipadm delete-addr vnic1/v4</code>). </p>
+<p>Create a zone with the following parameters: <code>name</code> (in our case it will be <code>zone1</code>), <code>zonepath</code>, where the zone's files will be located and network interface <code>vnic1</code> </p><pre>root@solaris:~# <kbd>zonecfg -z zone1 </kbd>zone1: No such zone configured Use 'create' to begin configuring a new zone. zonecfg:zone1> <kbd>create</kbd> 
+create: Using system default template 'SYSdefault'zonecfg:zone1> <kbd>set zonepath=/zones/zone1</kbd> 
+zonecfg:zone1> <kbd>add net</kbd>
+zonecfg:zone1:net> <kbd>set physical=vnic1</kbd>
+zonecfg:zone1:net> <kbd>end</kbd>zonecfg:zone1> <kbd>exit</kbd> 
+</pre><p>As simple as that! </p>
+ 
+<p> To check the status of our newly created zone: </p>
+<pre>root@solaris:~# <kbd>zoneadm list -cv </kbd>  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   - zone1            configured /zones/zone1                   solaris  excl  
+ </pre>
+ 
+<p>The zone is configured, we can install and boot it right now. But before the installation we'll 
+configure a profile for the Solaris instance which will be running inside the zone. 
+By doing that we are trying to avoid configuring the zone interactively and have it ready for use
+right after the first boot.</p>
+
+<pre>
+root@solaris:~# <kbd>sysconfig create-profile -o /root/zone1-profile.xml</kbd>
+</pre>
+
+<p>
+This command will bring you to the interactive dialog very similar to the standard Solaris installaion. Use F2 to confirm your choices and move from screen to screen. If F2 doesn't work for you, use Esc-2 (press and release Esc and then 2). You will have to enter:
+<ul>
+<li>Computer Name (hostname for the zone): <kbd>zone1</kbd></li>
+<li>Network configuration: choose "<kbd>Manually</kbd>"</li>
+<li>Network connection: <kbd>vnic1</kbd></li>
+<li>IP address: <kbd>10.0.2.21</kbd></li>
+<li>Router: <kbd>10.0.2.2</kbd></li>
+<li>"Configure DNS"</li>
+<li>DNS Server IP Address: <kbd>192.168.1.1</kbd> (use your local DNS server or any public DNS, like 8.8.8.8)</li>
+<li>Alternate Name Service: None</li>
+<li>Time zone: choose your time zone from the list</li>
+<li>Date: confirm the current date</li>
+<li>Root password: <kbd>solaris1</kbd></li>
+<li>New user account details: real name, login name and password. This will be the first user of the zone. 
+We have entered "<kbd>Zone User</kbd>", "<kbd>zuser</kbd>", "<kbd>oracle1</kbd>"</li>
+<li>Other options leave to defaults </li>
+</ul>
+</p>
+
+<p>
+Now, when the zone's profile is created, we can install the zone and initialize it using this profile.
+</p>
+
+<pre>root@solaris:~# <kbd>zoneadm -z zone1 install -c /root/zone1-profile.xml</kbd> 
+A ZFS file system has been created for this zone.
+Progress being logged to /var/log/zones/zoneadm.20111113T200358Z.zone1.install
+       Image: Preparing at /zones/zone1/root.
+
+ Install Log: /system/volatile/install.4418/install_log
+ AI Manifest: /tmp/manifest.xml.NVaaNi
+  SC Profile: /root/zone1-profile.xml
+    Zonename: zone1
+Installation: Starting ...</pre><p>Here you can take a break. The installation will take about 10 minutes, depending on your computer.</p>
+<pre> ...Long output is skipped... Next Steps: Boot the zone, then log into the zone console (zlogin -C) to complete the configuration process. </pre><p>Check the status again: </p><pre>root@solaris:~# <kbd>zoneadm list -cv</kbd>   ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   - zone1            installed  /zones/zone1                   solaris  excl  </pre>
+<p>It's time to boot our zone: </p><pre>root@solaris:~# <kbd>zoneadm -z zone1 boot </kbd>root@solaris:~# <kbd>zoneadm list -cv</kbd>  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   1 zone1            running    /zones/zone1                   solaris  excl  
+</pre>
+<p>
+Note the zone's status has changed to "running".
+</p>
+<p>Now log into our zone's console (note -C). You will have to wait a couple of minutes while the 
+system is initializing services for the first time. While waiting for the zone to boot completely, you can open another terminal window, become root (<code>su -</code>) and login into the zone directly with <code>zlogin zone1</code> This way you don't have to wait for all the services to start, but you can watch the booting process in real time. Run <code>prstat</code> and watch various system services starting one after another.  </p><pre>
+root@solaris:~# zlogin -C zone1 [Connected to zone 'zone1' console] </pre><p>You will get the standard Solaris login prompt (you might need to press [Enter] one more time). Congratulations! You've just configured 
+"virtualization within virtualization" using Oracle technologies: Solaris zones within Oracle VirtualBox. </p>
+
+<p>
+Try to login using <code>root</code>'s credentials (<code>root/solaris1</code>). Here is the result:
+</p>
+
+<pre>
+zone1 console login: root
+Password: 
+Roles can not login directly
+Login incorrect
+Nov 13 15:23:07 zone1 login: login account failure: Permission denied
+</pre>
+
+<p>
+A-ha! This is a new Solaris 11 security feature called "root as a role". That means that you can't 
+login into a system as "root".
+You have to use normal user's credentials and only then you will be able to use "sudo" or "pfexec"
+according to your roles and privileges. 
+</p>
+
+<p>
+Try to login again with <code>zuser/oracle1</code>.
+</p>
+<pre>
+Oracle Corporation      SunOS 5.11      11.1    September 2012
+zuser@zone1:~$
+</pre>
+
+<p>Success!</p>
+<p>Note: to escape from the zone's console use: ~. (tilde period). </p>
+<p><a href="#top">Back to top</a></p>
+<h2><a id="V.2">Exercise V.2: Inside the Zone </a></h2><p><strong>Task:</strong> You have to install some application packages in the zone and create users. </p><p><strong>Lab:</strong> Log in in the zone, create a user and install a web server application.</p> <pre>root@solaris:~# <kbd>zlogin zone1 </kbd>root@zone1:~# </pre><p>Play around with the usual sysadmin commands. How can you tell if you are in a zone or not? First, try <kbd>ps -ef</kbd>. 
+Do you see anything unusual? Yes, you are right, the process IDs don't start with 0, but with some big number. 
+Other than that, no visible difference between the normal Solaris installation and the zone. Try <kbd>uname -a, psrinfo, cat /etc/release</kbd>... Check if you can access the Internet by pinging oracle.com. </p><!-- <p>IMPORTANT NOTE: To avoid network congestion during this lab, we have created a local package 
+repository inside the virtual appliance. We have used it already during the zone's installation. 
+If you are going to use this virtual appliance not only for this lab, please change the package repository settings to the default values. See Final Remarks at the end of this document.</p>  --><p>Now let's do something useful with the zone. Like running a web server, for example. Let's install and run Apache. </p>
+<pre>root@zone1:~# <kbd>pkg list -a *apache*</kbd> . . .Skipped. . . web/server/apache-22 2.2.22-0.175.1.0.0.24.0  ---. . .Skipped. . . root@zone1:~# <kbd>pkg install apache-22</kbd> . . .Skipped. . . </pre><p>We've installed it successfully, but it's not running yet. </p><pre>root@zone1:~# <kbd>svcs -a | grep apache</kbd> disabled 6:31:42 svc:/network/http:apache22 </pre><p>Start the Apache web server:</p> <pre>root@zone1:~# <kbd>svcadm enable apache22</kbd> root@zone1:~# svcs -a | grep apache online 6:34:03 svc:/network/http:apache22 </pre><p>Check if it's working from your global Solaris zone (your Solaris desktop): 
+start Firefox and enter your zone's IP address into the URL field: 10.0.2.21. "It works!" -- the page usually reads. In our current VirtualBox 
+configuration (with NAT networking) the zone is not visible from outside, but you can always try to change your VirtualBox configuration to 
+Bridged networking and give your zone an IP address from your local network. (Do try this at home!). 
+</p>
+<p>Check if it's your zone who is talking. Go back to the zone's terminal 
+window and change your web server homepage (I'm using vi here, as we don't have many choices in a freshly installed zone. If you are not 
+familiar with vi, check our Vi Quick Reference below): </p>
+<pre>root@zone1:~# <kbd>vi /var/apache2/2.2/htdocs/index.html </kbd></pre><p>Write here something like "This is Zone1 and it works!" and save the file. 
+Make sure you use '<b>w!</b>' (with the exclamation sign) to save the read-only file. 
+Now reload the page in Firefox in your Solaris desktop. Did it work? Congratulations! </p><table width=50% cellpadding="0" cellspacing="0" border="0" bgcolor="lightgrey">
+<tr><td>
+<pre>Vi Quick Reference If you're unfamiliar with vi, following are a few common 
+keyboard commands to get you through this exercise: 
+i = switch to Insert mode
+
+Use Insert mode to type in your text.
+
+Esc = switch to Command mode
+
+In Command mode use:k = up j = down w = right or forward one word b = left or back one word l = right 1 char h = left 1 char x = delete 1 char u = undo dd = delete entire current line 
+:w = write (save) the current file:wq = write and quit 
+:w! = write to a read-only file:q! = quite ignoring changes (do not write) </pre>
+</td></tr></table><p>What else do we need? Try to create users in the zone. </p>
+<pre>root@zone1:~# <kbd>useradd -m jack</kbd> root@zone1:~# <kbd>passwd jack</kbd>
+New Password: <kbd>oracle1</kbd> (will not be displayed) Re-enter new Password: <kbd>oracle1</kbd> (will not be displayed) passwd: password successfully changed for jack root@zone1:~# <kbd>su - jack</kbd> Oracle Corporation	SunOS 5.11	11.0	November 2011
+jack@zone1:~$ <kbd>ls</kbd>
+local.cshrc    local.login    local.profile
+jack@zone1:~$ </pre>
+<p>Looks good! Try to login from your global zone (open another window on your Solaris desktop):</p><pre>lab@solaris:~$ <kbd>ssh -l jack 10.0.2.21</kbd></pre> 
+
+<p>(It's a small letter L here, not the digit one) </p>
+<p>For your homework: compare global and non-global zones installations. 
+How many packages are installed in both? How many services are running? Check if you can login into the global zone with the zone user's (jack) credentials. 
+Check if you can use your zone's root password in the global zone (of course, if they are different). </p>
+<p><a href="#top">Back to top</a></p>
+<h2><a id="V.3">Exercise V.3: Zone Cloning </a></h2><p><strong>Task:</strong> Your development team wants a copy of this environment for testing purposes. </p><p><strong>Lab:</strong> We will configure a new zone ('zone2') and then clone it from the existing zone1.
+
+<p>To configure the zone we have to repeat the steps we used for zone1. We have already created the file system to store our zones and mounted it at <code>/zones</code>. Now we'll create a new VNIC named 'vnic2' to use in zone2.</p>
+
+<pre>
+root@solaris:~# <kbd>dladm create-vnic -l net0 vnic2</kbd>
+</pre>
+
+<p>Now configure zone2 the same way you've configured zone1:</p>
+<pre>root@solaris:~# <kbd>zonecfg -z zone2 </kbd>zone2: No such zone configured Use 'create' to begin configuring a new zone. zonecfg:zone2> <kbd>create</kbd> 
+create: Using system default template 'SYSdefault'zonecfg:zone2> <kbd>set zonepath=/zones/zone2</kbd> 
+zonecfg:zone2> <kbd>add net</kbd>
+zonecfg:zone2:net> <kbd>set physical=vnic2</kbd>
+zonecfg:zone2:net> <kbd>end</kbd>zonecfg:zone2> <kbd>exit</kbd> 
+</pre>
+<p>Check:</p> <pre>root@solaris:~# <kbd>zoneadm list -cv</kbd>   ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   1 zone1            running    /zones/zone1                   solaris  excl  
+   - zone2            configured /zones/zone2                   solaris  excl  
+</pre>
+
+<p>Before cloning we have to shutdown our running zone1:</p>
+<pre>root@solaris:~# <kbd>zoneadm -z zone1 shutdown </kbd></pre><p>Then we create the new zone's profile. Start the System Configuration Tool and repeat 
+all the configuration steps you did for zone1. Just change Computer Name to "zone2", Network Interface 
+to "vnic2" and IP address to 10.0.2.22. </p>
+
+<pre>
+root@solaris:~# <kbd>sysconfig create-profile -o /root/zone2-profile.xml</kbd>
+</pre>
+<p>Now clone zone1 and configure zone2 automatically using this profile: </p><pre>root@solaris:~# <kbd>zoneadm -z zone2 clone -c /root/zone2-profile.xml zone1</kbd> root@solaris:~# <kbd>zoneadm list -cv </kbd>  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   1 zone1            installed  /zones/zone1                   solaris  excl  
+   2 zone2            installed  /zones/zone2                   solaris  excl  
+</pre>
+
+<p>Now boot both zones:</p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z zone1 boot</kbd> 
+root@solaris:~# <kbd>zoneadm -z zone2 boot</kbd> 
+root@solaris:~# <kbd>zoneadm list -cv </kbd>
+  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   1 zone1            running    /zones/zone1                   solaris  excl  
+   2 zone2            running    /zones/zone2                   solaris  excl  
+</pre>
+<p>Success! And it was faster than the initial installation, wasn't it? </p><p>After it's done, login into zone2. </p>
+<pre>root@solaris:~# <kbd>zlogin zone2 </kbd></pre><p>First of all, what about our Apache server? </p><pre>root@zone2:~# <kbd>pkg list -a | grep apache</kbd> . . .Skipped. . . web/server/apache-22                              2.2.20-0.175.0.0.0.2.537   i--</pre><p>Great! It's installed already! Check if it's running: </p>
+<pre>root@zone2:~# <kbd>svcs *apache*</kbd> online 11:48:47 svc:/network/http:apache22 </pre><p>Try the zone2 address (10.0.2.22) in Firefox in the global zone. </p>
+
+<p>"This is Zone1 and it works!" - of course, we have cloned not only installed applications, but also 
+their configurations. Change it to "Zone2", just for consistency sake. Now you know how to use the vi editor, 
+don't you?</p> <pre>root@zone2:~# <kbd>vi /var/apache2/2.2/htdocs/index.html </kbd></pre>
+<p><a href="#top">Back to top</a></p>
+<h2><a id="V.4">Exercise V.4: Zone Monitoring</a> </h2><p><strong>Task:</strong> Your departments want to know how much resources do they use to pay their fair 
+share for the datacenter infrastructure.</p> <p><strong>Lab:</strong> Some familiar Solaris commands now include a -Z parameter to help you to 
+monitor zones behavior. Try ps -efZ and prstat -Z to take a look. Try also a new command 
+zonestat to show zone statistics. </p>
+
+<pre>root@solaris:~# <kbd>zonestat -z zone1,zone2 5</kbd> </pre>
+
+<pre>
+Collecting data for first interval...
+Interval: 1, Duration: 0:00:05
+SUMMARY                   Cpus/Online: 1/1   PhysMem: 2047M  VirtMem: 3071M
+                    ---CPU----  --PhysMem-- --VirtMem-- --PhysNet--
+               ZONE  USED %PART  USED %USED  USED %USED PBYTE %PUSE
+            [total]  0.05 5.45%  968M 47.3% 1251M 40.7%     0 0.00%
+           [system]  0.01 1.51%  287M 14.0%  735M 23.9%     -     -
+              zone1  0.00 0.16% 73.8M 3.60% 66.3M 2.16%     0 0.00%
+              zone2  0.00 0.13% 73.9M 3.61% 67.2M 2.18%     0 0.00%
+</pre>
+
+<p>Note the parameters you can observe with <code>zonestat</code>: CPU utilization, physical and virtual memory usage,
+ network bandwidth utilization. </p>
+<p><a href="#top">Back to top</a></p>
+<h2><a id="V.5">Exercise V.5: Resource Management</a> </h2><p><strong>Task:</strong> You want to control the zones' resource usage. You want to assign certain 
+amount of processing power to each zone. </p><p><strong>Lab:</strong> We now know how to create and clone zones. Now let's try to cap CPU resources 
+in one zone to demonstrate the basics of resource management in Solaris. </p>
+<p>First, run a simple CPU-consuming script in the zone1: </p><pre>root@solaris:~# <kbd>zlogin zone1 "bash -c 'while true ; do date > /dev/null ; done'"</kbd> </pre><p>Note that we are simply using <code>zlogin</code> to pass the command to the zone. </p>
+<p>What's going on in the global zone? Open another window, become root and check:</p><pre>root@solaris:~# <kbd>vmstat 5 </kbd></pre><p>Idle is 0, system time is around 70%. Not good.</p> <pre>root@solaris:~# <kbd>zonestat 5</kbd> </pre><p>Zone1 consumes 70-80% of total resources, the rest is spent in global zone (most likely serving zone1's requests). We decided to reduce the zone1's resource consumption and give it only 50% of our CPU cycles. </p><pre>root@solaris:~# <kbd>zonecfg -z zone1</kbd> zonecfg:zone1> <kbd>add capped-cpu</kbd> zonecfg:zone1:capped-cpu> <kbd>set ncpus=0.5 </kbd>zonecfg:zone1:capped-cpu> <kbd>end </kbd>zonecfg:zone1> <kbd>exit</kbd> root@solaris:~# <kbd>zoneadm -z zone1 reboot </kbd></pre><p>After zone1 reboots, log in into it again and repeat the same steps: run the bash script 
+mentioned above and then run <code>zonestat 5</code> in another window. </p>
+
+<pre>root@solaris:~# <kbd>zlogin zone1 "bash -c 'while true ; do date > /dev/null ; done'"</kbd> </pre>
+<pre>root@solaris:~#<kbd> zonestat 5</kbd>
+</pre>
+
+<p>Do you see the difference? 
+Are you happy with the result? </p><p>Is it also possible to change this CPU cap parameter on the fly: </p>
+<pre>root@solaris:~# <kbd>prctl -n zone.cpu-cap -r -v 25 -i zone zone1 </kbd></pre><p>Check if it works: </p><pre>root@solaris:~# <kbd>zonestat 5 </kbd></pre><p>Don't forget to stop the infinite loop in your zone! Or simply halt the zone. </p><pre>root@solaris:~# <kbd>zoneadm -z zone1 halt</kbd> </pre><p>Other resources can be capped this way as well: memory, swap, number of threads etc. Again, think about how it can be used in real life situations? </p>
+<p><a href="#top">Back to top</a></p>
+</body>
+</html>

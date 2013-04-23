@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 VirtualBox Installation</title>
+<meta name="generator" content="Bluefish 2.2.3" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2012-11-26T17:17:52-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+
+</head>
+<body>
+<h1>Oracle Solaris 11 VirtualBox Installation</h1>
+
+<p>The fastest way to start with Oracle Solaris 11 Hands-on Labs is to use pre-installed Solaris 11 Virtual Machine for 
+Oracle VM VirtualBox. Other options are: installing Solaris inside VirtualBox VM from scratch using a bootable 
+ISO image or installing Solaris natively on your own computer (SPARC or x86). In this instruction we will cover the 
+first, fastest method. We assume that you have already downloaded and installed Oracle VM VirtualBox and its 
+Extension Pack. For more information on how to do that go to <a href="http://www.virtualbox.org/wiki/Downloads">
+http://www.virtualbox.org/wiki/Downloads</a>. </p>
+
+<p><b>1. Go to page:</b> <a href="http://www.oracle.com/technetwork/server-storage/solaris11/downloads/virtual-machines-1355605.html">
+http://www.oracle.com/technetwork/server-storage/solaris11/downloads/virtual-machines-1355605.html</a></p>
+
+<p><b>2. Accept the license terms:</b> </p>
+
+<img src="img/VM%20Download%20Page.png" width="500" alt="Accept License" />
+
+<p><b>3. Download Oracle Solaris 11.1 VirtualBox VM.</b> Make sure the downloaded file has a '.tgz' extension.</p>
+
+<img src="img/VM%20Download%20Link.png" width="500" alt="Download Link" />
+
+<p><b>4. Unarchive the downloaded file.</b> You can use various 
+applications to do that depending on your host OS. The final result should be a directory titled 
+'OracleSolaris11_1-VM' with an 'OracleSolaris11_1.ova' file in it (size 1.87 GB or 1,874,255,872 bytes).</p>
+
+<p><b>5. Import the VirtualBox appliance into VirtualBox:</b></p>
+
+<img src="img/Import%20Appliance.png" width="500" alt="Import Appliance" />
+
+<p><b>Choose the appliance file:</b></p>
+
+<img src="img/Choose%20File.png" width="500" alt="Choose File" />
+
+<p>The importing process will take 5-8 minutes depending on your computer. </p>
+
+<p><b>6. Start the VM:</b></p>
+
+<img src="img/Start%20VM.png" width="500" alt="Start VM" />
+
+<p><b>7. Answer the following configuration questions.</b> Use F2 to go from screen to screen 
+(it is recommended to use the answers provided below in bold):</p>
+<ul>
+<li>Computer name: <b>solaris</b></li>
+<li>Network configuration: <b>Automatically</b></li>
+<li>Computer timezone: <b>Your local timezone</b></li>
+<li>Root password: <b>solaris1</b></li>
+<li>Your real name: <b>Lab User</b></li>
+<li>Username: <b>lab</b></li>
+<li>User password: <b>oracle1</b></li>
+</ul>
+
+<p><b>8. Wait until the boot process is completed and you received the login screen like this:</b></p>
+
+<img src="img/GDM%20Login.png" width="500" alt="Login" />
+
+<p><b>9. Troubleshooting.</b> The virtual machine might refuse to start giving you diagnostic messages 
+about lack of VT-x support or 'long mode is not supported'. This indicates that hardware virtualizatoin 
+is not enabled or not available on your computer. To enable hardware virtualization you have to reboot your 
+computer and enter the BIOS menu. Unfortunately, as all BIOSes are different, we can't provide exact instructions 
+where to find this option. Sometimes it's in CPU section, sometimes in Virtualization, sometimes even in Security. 
+After you have enabled hardware virtualization, try to reboot the computer and start the VM again.</p>
+
+<p><b>10. Congratulations! You are ready to start with the lab.</b></p>
+
+</body>
+</html>

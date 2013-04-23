@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 IPS Lab</title>
+<meta name="generator" content="Bluefish 2.2.3" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2013-02-15T12:05:02-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1>Oracle Solaris 11 IPS Lab</h1>
+
+<p>One of the main new features in Solaris 11 is a new packaging system, called IPS (Image Packaging System). In this lab we will explore its capabilities and learn how to work with packages from System Administrator's perspecitve.</p>
+
+
+<h2><a id="P.1">Exercise P.1: IPS Basics</a></h2>
+
+<p><strong>Task: </strong>You want to find and install a package from Solaris repository.</p>
+
+<p><strong>Lab: </strong>We will learn some basic IPS commands used to look for a package, inquire about its content etc. When we found the package we needed, we install it.</p>
+
+<p>Let's imagine we want to do some network load testing, 
+so we want to run the utility called 'iperf'. Try to run this command and find out that it's not installed:</p>
+
+<pre>root@solaris:~# <kbd>iperf</kbd></pre>
+
+<p>So the first thing we do is show our current publisher. The publisher is where the IPS repository is located. It can be a local directory, an NFS  mount point, an internal http ot https server, or an Internet repository like http://pkg.oracle.com/solaris. You system can have several publishers configured.</p>
+
+<pre>root@solaris:~# <kbd>pkg publisher</kbd></pre>
+
+<p>OK, it seems we are going to use our local publisher installed in our Solaris system.</p>
+
+<p>Now we list our installed packages</p>
+<pre>root@solaris:~# <kbd>pkg list |more</kbd></pre>
+<p>Let's see how many packages are installed</p>
+<pre>root@solaris:~# <kbd>pkg list |wc</kbd></pre>
+<p>Now let's see how many packages are available in the repository</p>
+<pre>root@solaris:~# <kbd>pkg list -a |wc</kbd></pre>
+<p>As you can see, our local repository is pretty small, it contains only the packages we need for this lab. If you have changed the publisher to http://pkg.oracle.com/solaris/release as it's described in the introduction, you would see many more packages.</p>
+
+<p>Let's now do a local search for iperf (among the installed packages). It will find nothing:</p>
+<pre>root@solaris:~# <kbd>pkg search -l iperf</kbd></pre>
+<p>Now do the same search, without the -l flag so it goes to the repository:</p>
+<pre>root@solaris:~# <kbd>pkg search iperf</kbd></pre>
+<p>Next we get some information about the package like date of creation, version number, etc.</p>
+<pre>root@solaris:~# <kbd>pkg info -r iperf</kbd></pre>
+<p>And we can see exactly what files make up the package:</p>
+<pre>root@solaris:~# <kbd>pkg contents -r iperf</kbd></pre>
+<pre>root@solaris:~# <kbd>pkg search benchmark/iperf:depend::</kbd></pre>
+<p>And now we install the <code>iperf</code> package:</p>
+<pre>root@solaris:~# <kbd>pkg install iperf</kbd></pre>
+<p>Here we demonstrate what kind of metadata is kept in IPS:</p>
+<pre>root@solaris:~# <kbd>pkg contents -t file -o owner,group,mode,pkg.size,path iperf</kbd></pre>
+<p>Now we run iperf to show it's now found:</p>
+<pre>root@solaris:~# <kbd>iperf</kbd></pre>
+<p>Show how we can verify a package has not been compromised:</p>
+<pre>root@solaris:~# <kbd>pkg verify iperf</kbd></pre>
+<p>Let's check the permission bits of <code>iperf</code>:</p>
+<pre>root@solaris:~# <kbd>ls -l /bin/iperf</kbd></pre>
+<p>Let's say someone changed the permissions bits like this:</p>
+<pre>root@solaris:~# <kbd>chmod 777 /bin/iperf</kbd></pre>
+<p>Let's verify again, and it will return an error:</p>
+<pre>root@solaris:~# <kbd>pkg verify iperf</kbd></pre>
+<p>Now let's fix this package:</p>
+<pre>root@solaris:~# <kbd>pkg fix iperf</kbd></pre>
+<p>The next few lines show an interesting way of getting a package name from a arbitrary file. Let's take <code>vi</code> editor for test. We first get a SHA1 digest of '<code>/usr/bin/vi</code>'</p>
+<pre>root@solaris:~# <kbd>digest -a sha1 /usr/bin/vi</kbd></pre>
+<p>Since the digest is saved in the package DB, we can search for that hash and see what matches it:</p>
+<pre>root@solaris:~# <kbd>pkg search -l f2495fa19fcc4b8a403e0bd4fef809d031296c68</kbd></pre>
+<p>How can we use it? Imagine someone has renamed some important file to hide his tracks. Using this method we can find out the original name of the file.</p>
+
+<p>Now the command we use to update our installed packages:</p>
+<pre>root@solaris:~# <kbd>pkg update</kbd></pre>
+<p>It doesn't show anything as we are using the original "release" repository. If we had the "support" repository configured, it would find all the updates and install them.</p>
+<p>Lastly, we show how you can view a history of package commands:</p>
+<pre>root@solaris:~# <kbd>pkg history</kbd></pre>
+<p>And a verbose history:</p>
+<pre>root@solaris:~# <kbd>pkg history -l|more</kbd></pre>
+<p>And finally, we uninstall the <code>iperf</code> package:</p>
+<pre>root@solaris:~# <kbd>pkg uninstall iperf</kbd></pre>
+
+<h2><a id="P.2">Exercise P.2: IPS and Boot Environments</a></h2>
+
+<p>Another important feature of IPS is the ability to perform all package related operations not only on the current boot environment, but also on a mounted one. Imagine you want to update your system, but you want to keep your current state untouched to be able to return back to safety in case something goes wrong. Also you want to minimize the downtime.</p>
+
+<p>Create a new boot environment for the updated system:</p>
+
+<pre>root@solaris:~# <kbd>beadm create solaris-updated</kbd></pre>
+
+<p>In real life you might want to use some naming policy for the BEs, like timestamping them.</p>
+
+<p>Now mount this boot environment in your file system:</p>
+
+<pre>root@solaris:~# <kbd>beadm mount solaris-updated /mnt</kbd></pre>
+
+<p>Now you can perform any package operations with this mounted boot environment. As we don't have updates in our repository, we just install a package (the same iperf package), check that it's not available in our current BE and then reboot the system with the updated BE and make sure the package is installed there.</p>
+
+<pre>root@solaris:~# <kbd>pkg -R /mnt install iperf</kbd></pre>
+
+<p>Now make sure the new boot environment is active on reboot:</p>
+
+<pre>root@solaris:~# <kbd>beadm activate solaris-updated</kbd></pre>
+
+<p>Then reboot the system and check if iperf is available.</p>
+
+<p>Imagine how much downtime you can save when using this method to update your system!</p>
+
+
+
+</body>
+</html>

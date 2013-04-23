@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 ZFS Lab</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2013-03-20T14:09:24-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+
+<body>
+<h1><a id="top">Oracle Solaris 11 ZFS Lab</a></h1>
+
+<h2>Table of Contents</h2>
+
+<p>
+<a href="#Z.1">Exercise Z.1: ZFS Pools</a></br>
+<a href="#Z.2">Exercise Z.2: ZFS File Systems</a></br>
+<a href="#Z.3">Exercise Z.3: ZFS Compression</a></br>
+<a href="#Z.4">Exercise Z.4: ZFS Deduplication</a></br>
+<a href="#Z.5">Exercise Z.5: ZFS Snapshots</a></br>
+<a href="#Z.6">Exercise Z.6: ZFS Clones</a></br>
+</p>
+
+<h2><a id="Z.1">Exercise Z.1: ZFS Pools </a></h2><p><strong>Task:</strong> You have several disks to use for your new file system. 
+Create a new disk pool and a file system on top of it. </p><p><strong>Lab:</strong> We will check the status of disk pools, create our own pool and expand it.</p>
+
+<p>Our Solaris 11 installation already has a ZFS pool. It's your root file system. Check this: </p>
+
+<pre>root@solaris:~# <kbd>zpool list</kbd> </pre>
+
+<pre>
+NAME    SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+rpool  15.9G  5.64G  10.2G  35%  1.00x  ONLINE  -
+</pre><p>This is our root system ZFS pool. In Solaris 11 the root file system must be ZFS created on top of ZFS pool. What do we know about this pool? </p><pre>root@solaris:~# <kbd>zpool status rpool </kbd>  pool: rpool
+ state: ONLINE
+  scan: none requested
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	rpool       ONLINE       0     0     0
+	  c3t0d0s0  ONLINE       0     0     0
+
+errors: No known data errors</pre><p>Let's now create our own ZFS pool. What do we need for that? Just several disks and one command. 
+We will create several files in /dev/dsk directory and they will act as disks in our lab. Note that in the 
+command below we are using the <code>bash(1)</code> expansion to create 10 files with names from disk0 to disk9. </p><pre>root@solaris:~# <kbd>cd /dev/dsk</kbd> 
+root@solaris:~# <kbd>mkfile 200m disk{0..9}</kbd>
+</pre>
+<p>We'll take four disks and create a ZFS pool with RAID-Z protection: </p><pre>root@solaris:~# <kbd>zpool create labpool raidz disk0 disk1 disk2 disk3 </kbd></pre><p>That was easy, wasn't it? And fast, too! Check our ZFS pools again: </p><pre>root@solaris:~# <kbd>zpool list</kbd> NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool   780M   194K   780M   0%  1.00x  ONLINE  -
+rpool    15.9G  7.57G  8.30G  47%  1.00x  ONLINE  -</pre>
+
+<p>By the way, the file system was also created and mounted automatically: </p>
+<pre>root@solaris:~# <kbd>zfs list labpool</kbd> NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                 97.2K   551M  44.9K  /labpool</pre><p>Do you need more space? Adding disks to the existing ZFS pool is as easy as creating it: </p><pre>root@solaris:~# <kbd>zpool add labpool raidz disk4 disk5 disk6 disk7</kbd> </pre><p>Check it again: </p><pre>root@solaris:~# <kbd>zfs list labpool</kbd> NAME      USED  AVAIL  REFER  MOUNTPOINT
+labpool  97.2K  1.11G  44.9K  /labpool</pre><p>Note the increased file system's size. Also note there are two disk groups in this pool both protected with RAID-Z. ZFS has many options to protects your data, you can learn and experiments with them later. </p>
+
+<p><a href="#top">Back to top</a></p><h2><a id="Z.2">Exercise Z.2: ZFS File Systems</a></h2> <p><strong>Task:</strong> You have to create home directories for your users; use file system quota to limit their space. </p><p><strong>Lab:</strong> We'll create a user "<code>joe</code>" and set a disk quota for him. </p>
+<p>
+Creating a user is pretty similar to most Unix/Linux systems. What's different is what's going on behind the scenes.
+</p>
+<pre>
+root@solaris:~# <kbd>useradd -m joe</kbd> root@solaris:~# <kbd>passwd joe</kbd> 
+New Password: <kbd>oracle1</kbd> 
+Re-enter new Password: <kbd>oracle1</kbd>
+passwd: password successfully changed for joe</pre><p>In Solaris 11 behind the scenes we create a <em>separate</em> ZFS file system for the user (parameter <code>-m</code>) 
+in <code>/export/home</code>.
+Check it:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs list</kbd>
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                 97.2K  1.11G  44.9K  /labpool
+rpool                   7.65G  7.97G    39K  /rpool
+rpool/ROOT              5.59G  7.97G    31K  legacy
+rpool/ROOT/solaris      5.59G  7.97G  5.17G  /
+rpool/ROOT/solaris/var   330M  7.97G   183M  /var
+rpool/dump              1.03G  8.01G  1.00G  -
+rpool/export            1.48M  7.97G    32K  /export
+rpool/export/home       1.44M  7.97G    33K  /export/home
+rpool/export/home/joe    686K  7.97G   686K  /export/home/joe
+rpool/export/home/lab    760K  7.97G   760K  /export/home/lab
+rpool/swap              1.03G  8.01G  1.00G  -
+</pre>
+
+<p>
+What does it mean for us, system administrators? That means we can use all kinds of ZFS features 
+(compression, deduplication, encryption) on a per-user basis. We can create snapshots and perform 
+rollbacks on a per-user basis. More about that later. Now we'll set a disk quota for <code>joe</code>'s home
+directory.
+</p>
+
+<pre>
+root@solaris:~# <kbd>zfs set quota=200m rpool/export/home/joe</kbd>
+</pre>
+<p>Now change user to "<code>joe</code>" and check how much space you can use: </p><pre>root@solaris:# <kbd>su - joe </kbd>joe@solaris$ <kbd>mkfile 110m file1</kbd> joe@solaris$ <kbd>cp file1 file2 </kbd></pre><p>First file was created OK, but with the second one we've got an error: "Disk quota exceeded". </p><p>Change the quota for <code>joe</code> in the other window: </p><pre>root@solaris:~# <kbd>zfs set quota=300m rpool/export/home/joe</kbd> </pre> 
+<p>
+Then change back to the <code>joe</code>'s window and try again:
+</p>
+
+<pre>joe@solaris$ <kbd>cp file1 file2</kbd> </pre><p>Success! As you can see, it's pretty easy to create and manage ZFS filesystems. Remember, by default Solaris 11 creates
+ a separate ZFS file system for each user. </p>
+
+<p><a href="#top">Back to top</a></p>
+<h2><a id="Z.3">Exercise Z.3: ZFS Compression</a> </h2>
+<p><strong>Task:</strong> You are becoming low on your disk space. Now you know how to add more disks to your pool 
+and expand your file system. What other ZFS features can help you to solve this problem? </p><p><strong>Lab:</strong> In our lab we will compress our Solaris manuals directory and see if we are able to use it after that. 
+Create a separate filesystem for this on our 'labpool' ZFS pool: </p><pre>root@solaris:~# <kbd>zfs create labpool/zman </kbd>root@solaris:~# <kbd>zfs list | grep zman </kbd>labpool/zman                31K  7.78G    31K  /labpool/zman
+</pre><p>Set compression to "gzip" (there are options to gzip and other algorithms too--check the manual). You can do that also while creating the filesystem.</p>
+
+<pre>root@solaris:~# <kbd>zfs set compression=gzip labpool/zman </kbd></pre><p>Copy the first part of Solaris manuals there (it will take some time, be patient): </p><pre>root@solaris:~# <kbd>cp -rp /usr/share/man/man1 /labpool/zman/ </kbd></pre><p>Compare the sizes: </p>
+<pre>root@solaris:~# <kbd>du -sh /usr/share/man /labpool/zman</kbd> 15.2M 	/usr/share/man
+  6.8M	   /labpool/zman
+ </pre><p>We just have saved about 55% of disk space. Not bad! Check if you are able to use the manuals after compression: </p>
+<pre>root@solaris:~# <kbd>export MANPATH=/labpool/zman ; man ls</kbd> </pre>
+
+
+<p><a href="#top">Back to top</a></p>
+
+<h2><a id="Z.4">Exercise Z.4: ZFS Deduplication</a></h2>
+
+<p><strong>Task:</strong> Users tend to keep a lot of similar files in their archives. Is it possible to save 
+space by deduplication?</p>
+
+<p><strong>Lab: </strong>We will create a ZFS file system with deduplication turned on and see if it helps.</p>
+
+<p>
+Let's model the following situation: we have a file system which is used as an archive. 
+We'll create separate file systems for each user and imagine that they store similar files there.  
+</p>
+
+<p>We will use the ZFS pool called <code>labpool</code> that we have created in the first exercise. </p>
+
+<p>Create a file system with deduplication and compression:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create -o dedup=on -o compression=gzip labpool/archive</kbd>
+</pre>
+
+<p>Create users' file systems (we'll call them a, b, c, d for simplicity):</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create labpool/archive/a</kbd>
+root@solaris:~# <kbd>zfs create labpool/archive/b</kbd>
+root@solaris:~# <kbd>zfs create labpool/archive/c</kbd>
+root@solaris:~# <kbd>zfs create labpool/archive/d</kbd>
+</pre>
+
+<p>
+Check their "dedup" parameter:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zfs get dedup labpool/archive/a</kbd>
+NAME               PROPERTY  VALUE          SOURCE
+labpool/archive/a  dedup     on             inherited from labpool/archive
+</pre>
+
+<p>Children file systems inherit parameters from their parents.</p>
+
+<p>Create an archive from /usr/share/man/man1, for example.</p>
+
+<pre>
+root@solaris:~# <kbd>tar czf /tmp/man.tar.gz /usr/share/man</kbd>
+</pre>
+
+<p>And copy it four times to the file systems we've just created. Don't forget to check deduplication rate after each copy.</p>
+
+<pre>
+root@solaris:~# <kbd>cd /labpool/archive</kbd>
+root@solaris:/labpool/archive# <kbd>ls -lh /tmp/man.tar.gz </kbd>
+-rw-r--r--   1 root     root        3.1M Dec 13 17:03 /tmp/man.tar.gz
+root@solaris:/labpool/archive# <kbd>zpool list labpool</kbd>
+NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool  1.52G  1.05M  1.52G   0%  1.00x  ONLINE  -
+root@solaris:/labpool/archive# <kbd>cp /tmp/man.tar.gz a/</kbd>
+root@solaris:/labpool/archive# <kbd>zpool list labpool</kbd>
+NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool  1.52G  40.5M  1.48G   2%  1.00x  ONLINE  -
+root@solaris:/labpool/archive# <kbd>cp /tmp/man.tar.gz b/</kbd>
+root@solaris:/labpool/archive# <kbd>zpool list labpool</kbd>
+NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool  1.52G  40.7M  1.48G   2%  2.00x  ONLINE  -
+root@solaris:/labpool/archive# <kbd>cp /tmp/man.tar.gz c/</kbd>
+root@solaris:/labpool/archive# <kbd>zpool list labpool</kbd>
+NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool  1.52G  41.5M  1.48G   2%  3.00x  ONLINE  -
+root@solaris:/labpool/archive# <kbd>cp /tmp/man.tar.gz d/</kbd>
+root@solaris:/labpool/archive# <kbd>zpool list labpool</kbd>
+NAME      SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+labpool  1.52G  41.2M  1.48G   2%  4.00x  ONLINE  -
+</pre>
+
+<p>It might take a couple of seconds for ZFS to commit those changes and report the correct dedup ratio. 
+Just repeat the command if you don't see the results listed above. </p>
+
+<p>Remember, we set compression to "on" as well when we created the file system? Check the compression ratio:</p>
+
+<pre>
+root@solaris:/labpool/archive# <kbd>zfs get compressratio labpool/archive</kbd>
+NAME             PROPERTY       VALUE  SOURCE
+labpool/archive  compressratio  1.01x  -
+</pre>
+
+<p>The reason is simple: we placed in the file system files that are compressed already. 
+Sometimes compression can save you some space, sometimes deduplication can help. </p>
+
+<p>It's interesting to note that ZFS uses deduplication on a block level, not on a file level. That means if you have a single file but with a lot of identical blocks, it will be deduplicatied too. Let's check this. Create a new ZFS pool:</p>
+
+<pre>
+root@solaris:~# <kbd>cd /dev/dsk/</kbd>
+root@solaris:/dev/dsk# <kbd></kbd>mkfile 100m disk{10..13}
+root@solaris:/dev/dsk# <kbd>cd</kbd>
+root@solaris:~# <kbd>zpool create ddpool raidz disk10 disk11 disk12 disk13</kbd>
+</pre>
+
+<p>As you remember, when we create a ZFS pool, by default a new ZFS filesystem with the same name is created and mounted. We just have to turn deduplication on:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zfs set dedup=on ddpool</kbd>
+</pre>
+
+<p>Now let's create a big file that contains 1000 copies of the same block. In the following commands we are figuring out the size of a ZFS block and creating a single file of that size. Then we are copying that file 1000 times into our big file. </p>
+
+<pre>
+root@solaris:~# <kbd>zfs get recordsize ddpool</kbd>
+NAME    PROPERTY    VALUE  SOURCE
+ddpool  recordsize  128K   default
+root@solaris:~# <kbd>mkfile 128k 128k-file</kbd>
+root@solaris:~# <kbd>for i in {1..1024} ; do cat 128k-file >> 1000copies-file ; done</kbd>
+</pre>
+
+<p>Now we can copy this file to /ddpool and see the result:
+</p>
+
+<pre>
+root@solaris:~# <kbd>cp 1000copies-file /ddpool</kbd>
+root@solaris:~# <kbd>zpool list</kbd>
+NAME     SIZE  ALLOC   FREE  CAP     DEDUP  HEALTH  ALTROOT
+ddpool   382M   635K   381M   0%  1000.00x  ONLINE  -
+rpool     62G  11.7G  50.3G  18%     1.00x  ONLINE  -
+</pre>
+
+<p>How can this help in real life? Imagine you have a policy which requires creating and storing an archive every day. The archive's content doesn't change a lot from day to day, but still you have to create it every day. Most of the blocks in the archive will be identical so it can be deduplicated very efficiently. Let's demonstrate it using our system's manual directories.</p>
+
+<pre>
+root@solaris:~# <kbd>tar cvf /tmp/archive1.tar /usr/share/man/man1</kbd>
+root@solaris:~# <kbd>tar cvf /tmp/archive2.tar /usr/share/man/man1 /usr/share/man/man2</kbd>
+</pre>
+
+<p>Clean up our <code>/ddpool</code> file system and copy both files there:</p>
+
+<pre>
+root@solaris:~# <kbd>rm /ddpool/*</kbd>
+root@solaris:~# <kbd>cp /tmp/archive* /ddpool</kbd>
+root@solaris:~# <kbd>zpool list ddpool</kbd>
+NAME    SIZE  ALLOC  FREE  CAP  DEDUP  HEALTH  ALTROOT
+ddpool  238M  51.1M  187M  21%  1.89x  ONLINE  -
+</pre>
+
+<p>Think about your real life situations where deduplication could help. Homework exercise: compress both archive files with <code>gzip</code>, clean up the <code>/ddpool</code> and copy the compressed files again. Check if it affects deduplication rate.</p>
+
+<p><a href="#top">Back to top</a></p>
+<h2><a id="Z.5">Exercise Z.5: ZFS Snapshots</a></h2> <p><strong>Task:</strong> A user has accidentally deleted her file. How to restore it without getting to the tape backup?</p> <p><strong>Lab:</strong> Create a snpashot of our archive filesystem: </p><pre><kbd>root@solaris:~# zfs snapshot -r labpool/archive@snap1</kbd> 
+</pre>
+
+<p>Note the '-r' parameter telling ZFS that we want to snapshot all dependent filesystems as well. Check your work:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs list -r -t all labpool</kbd>
+NAME                      USED  AVAIL  REFER  MOUNTPOINT
+labpool                  18.5M  1.10G  47.9K  /labpool
+labpool/archive          12.7M  1.10G  52.4K  /labpool/archive
+labpool/archive@snap1        0      -  52.4K  -
+labpool/archive/a        3.17M  1.10G  3.17M  /labpool/archive/a
+labpool/archive/a@snap1      0      -  3.17M  -
+labpool/archive/b        3.17M  1.10G  3.17M  /labpool/archive/b
+labpool/archive/b@snap1      0      -  3.17M  -
+labpool/archive/c        3.17M  1.10G  3.17M  /labpool/archive/c
+labpool/archive/c@snap1      0      -  3.17M  -
+labpool/archive/d        3.17M  1.10G  3.17M  /labpool/archive/d
+labpool/archive/d@snap1      0      -  3.17M  -
+labpool/zman             5.41M  1.10G  5.41M  /labpool/zman
+</pre>
+
+
+<p>Imagine user 'a' had deleted her archive stored in /labpool/archive/a. </p>
+
+<pre><kbd>root@solaris:~# rm /labpool/archive/a/*</kbd> 
+</pre>
+<p>And she comes to you asking for help. "Can you restore my archive before tomorrow?", she asks. Of course, you can! In a matter of seconds, not hours, her archive files will be back! Just rollback the snapshot! </p>
+<pre><kbd>root@solaris:~# zfs rollback labpool/archive/a@snap1</kbd> 
+</pre>
+
+
+<p>You may ask "How often should I make snapshots? Do snapshots take a lot of space? The answer is here:</p><pre>
+root@solaris:~# <kbd>zfs list -r -t all labpool </kbd>NAME                    USED  AVAIL  REFER  MOUNTPOINT
+labpool                18.5M  1.10G  47.9K  /labpool
+labpool/archive        12.7M  1.10G  52.4K  /labpool/archive
+labpool/archive@snap1      0      -  52.4K  -
+labpool/archive/a      3.17M  1.10G  3.17M  /labpool/archive/a
+labpool/archive/b      3.17M  1.10G  3.17M  /labpool/archive/b
+labpool/archive/c      3.17M  1.10G  3.17M  /labpool/archive/c
+labpool/archive/d      3.17M  1.10G  3.17M  /labpool/archive/d
+labpool/zman           5.41M  1.10G  5.41M  /labpool/zman
+</pre><p>The snapshot uses 0 bytes because we have not changed anything in your home directory. When you make changes to your filesystem, it will take more space. Try to change something in the /labpool/archive directory and check the sizes again. Learn more about how snapshots work from our OTN technical presentations and articles.<p>Food for thought: How can snapshots be used in the real life environment? Backup is the first idea that comes to mind. What else? </p>
+
+<h2><a id="Z.6">Exercise Z.6: ZFS Clones</a></h2> <p><strong>Task:</strong> We need to create a copy of our transactional data to do some analysis and modifications. In other words, we need a writeable snapshot. </p> <p><strong>Lab:</strong> In this lab we will use ZFS cloning feature. Clones are similar to snapshots, but you can modify them. Similarly to snapshots, it takes seconds to create them and they take almost no space until you start changing your files.  </p>
+<p>Clones can't be created from a live filesystem. To create a clone we have to have a snapshot first. In this lab we can use a snapshot '@snap1' we have just created. </p>
+
+<pre>
+root@solaris:~# <kbd>zfs clone labpool/archive/a@snap1 labpool/a_work</kbd>
+root@solaris:~# <kbd>zfs list -r -t all labpool</kbd>
+NAME                      USED  AVAIL  REFER  MOUNTPOINT
+labpool                  18.6M  1.10G  49.4K  /labpool
+labpool/a_work           26.9K  1.10G  3.17M  /labpool/a_work
+labpool/archive          12.8M  1.10G  52.4K  /labpool/archive
+labpool/archive@snap1        0      -  52.4K  -
+labpool/archive/a        3.20M  1.10G  3.17M  /labpool/archive/a
+labpool/archive/a@snap1  26.9K      -  3.17M  -
+labpool/archive/b        3.17M  1.10G  3.17M  /labpool/archive/b
+labpool/archive/b@snap1      0      -  3.17M  -
+labpool/archive/c        3.17M  1.10G  3.17M  /labpool/archive/c
+labpool/archive/c@snap1      0      -  3.17M  -
+labpool/archive/d        3.17M  1.10G  3.17M  /labpool/archive/d
+labpool/archive/d@snap1      0      -  3.17M  -
+labpool/zman             5.41M  1.10G  5.41M  /labpool/zman
+</pre>
+
+<p>Check if the archive is in place in the clone filesystem:</p>
+
+<pre>
+root@solaris:~# <kbd>cd /labpool/a_work</kbd>
+root@solaris:/labpool/a_work# <kbd>ls</kbd>
+man.tar.gz
+</pre>
+
+<p>Unpack the archive and then check the original directory.</p>
+
+<pre>
+root@solaris:/labpool/a_work# <kbd>tar xzvf man.tar.gz </kbd>
+....................
+tar: Removing leading '/' from '/usr/share/man/man1/tracker-services.1'
+x usr/share/man/man1/tracker-services.1, 1938 bytes, 4 tape blocks
+root@solaris:/labpool/a_work# <kbd>ls -l </kbd>
+total 6413
+-rw-r--r--   1 root     root     3257177 Dec 13 17:05 man.tar.gz
+drwxr-xr-x   3 root     root           3 Dec 13 18:04 usr
+root@solaris:/labpool/a_work# cd ../archive/a
+root@solaris:/labpool/archive/a# ls  -l
+total 6409
+-rw-r--r--   1 root     root     3257177 Dec 13 17:05 man.tar.gz
+</pre>
+
+<p>This powerful cloning feature can be used for your regular data. Oracle Solaris uses it internally to create boot environments and zone clones. They will be described in the following lab exercises.</p>
+
+<p><a href="#top">Back to top</a></p>
+
+</body>
+</html>

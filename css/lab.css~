@@ -1,0 +1,52 @@
+body {
+	font-family: Verdana, Tahoma, Arial, Helvetica, sans-serif;
+	font-size: 0.875em;
+	line-height: 140%;
+	text-align: justify;
+}
+
+
+pre {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: normal;
+}
+
+kbd {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: bold;
+}
+
+code {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: normal;
+}
+
+p {
+	width: 50em;
+}
+
+ul {
+	width: 50em;
+}
+
+table
+{
+    border: 1px solid grey;
+    border-collapse: collapse;
+    width: 50em;
+}
+th {
+    background-color:grey;
+    color:white;
+    padding:4px 7px 4px 7px;
+    border: 1px solid grey;
+    border-collapse:collapse;
+	font-size: small;
+}
+
+td {
+    padding:4px 7px 4px 7px;
+    border: 1px solid grey;
+    border-collapse:collapse;
+	font-size: small;
+}

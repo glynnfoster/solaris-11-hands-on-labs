@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 DTrace Lab</title>
+<meta name="generator" content="Bluefish 2.0.2" >
+<meta name="author" content="Lab User" >
+<meta name="date" content="2012-09-05T14:37:03-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+
+<h1><a id="top">Oracle Solaris 11 DTrace Lab</a></h1>
+
+<h2>Table of Contents</h2>
+
+<p>
+<a href="#D.1">Exercise D.1: DTrace CPU</a> </br>
+<a href="#D.2">Exercise D.2: DTrace Disk</a> 
+
+</p>
+<h2><a id="D.1">Exercise D.1: DTrace CPU</a> </h2><p><strong>Task:</strong> You have noticed that system utilization is very high. How to find the 
+process which consumes most of the resources? </p><p><strong>Lab:</strong> Let's model a simple situation to demonstrate how DTrace scripts can be 
+used in the situations when no other tool is helpful. </p>
+<p><strong>60 Seconds of Theory:</strong> DTrace is a big topic. We can spend weeks and months learning DTrace 
+and we will still be discovering something new. The "DTrace Book" is hot off the press and available at Amazon. 
+It's over 1150 pages on the subject! We'll spend about half an hour just to give you a taste of DTrace. If you need more-buy the book, find DTrace 
+resources on the web--there are plenty of them. </p>
+<p>In short, DTrace is a tool which allows you to look into every part of your system: 
+from kernel structures and system calls to application functions, from contents of system stack to user interface. It is achieved by embedding 
+a lot (literally, tens of thousands!) of probes in each and every place of the operating system. All those probes are dynamic: you can turn 
+them on and off (fire them) and they don't consume system resources when not in use. </p>
+<p>Another important feature of DTrace is its safety. Safety was one the central design 
+goals of DTrace from its inception; that means you can (and should) use DTrace on your production systems. </p>
+<p>DTrace uses a C-like scripting language called D, which supports all ANSI C operators. 
+Most likely you are familiar with C language syntax, that really helps in learning D. We won't go into DTrace language and syntax here, 
+we'll just try several examples that can be helpful in everyday life. </p><h3>DTrace one-liners </h3><p>There are a lot of useful one-liners in every scripting language: bash, sed, awk, Perl etc. 
+DTrace is not an exception here. Try the following one-liners and see what you can observe with them. 
+The usual way to work with DTrace scripts is to start them, wait for some time while DTrace is collecting data and then press Ctrl-C. </p><p>What processes are being started currently? New processes with arguments: </p>
+<kbd>dtrace -n 'proc:::exec-success { trace(curpsinfo->pr_psargs); }' </kbd><p>Longer version: new processes with arguments and time </p><kbd>dtrace -qn 'syscall::exec*:return { printf("%Y %s\n",walltimestamp,curpsinfo->pr_psargs); }' </kbd><p>Which files are being opened by each starting process? </p><kbd>dtrace -n 'syscall::open*:entry { printf("%s %s",execname,copyinstr(arg1)); }' </kbd><p>System time is high. What are the programs doing, who is calling most of system calls? </p><kbd>dtrace -n 'syscall:::entry { @num[execname] = count(); }' </kbd><p>Which syscalls are being called most often? </p><kbd>dtrace -n 'syscall:::entry { @num[probefunc] = count(); }' </kbd><p>Which process is calling most of system calls? </p><kbd>dtrace -n 'syscall:::entry { @num[pid,execname] = count(); }' </kbd><p>Read IOPS are high. Who is reading now? Read bytes by process </p><kbd>dtrace -n 'sysinfo:::readch { @bytes[execname] = sum(arg0); }' </kbd><p>Write IOPS are high. Somebody is writing to disk, filling up all the space. Who is writing? </p><kbd>dtrace -n 'sysinfo:::writech { @bytes[execname] = sum(arg0); }' </kbd><p>How big are blocks being read? Read size distribution by process </p><kbd>dtrace -n 'sysinfo:::readch { @dist[execname] = quantize(arg0); }'</kbd> <p>Write size distribution by process </p><kbd>dtrace -n 'sysinfo:::writech { @dist[execname] = quantize(arg0); }' </kbd><p>Back to our example. Open another terminal window or a tab on your Solaris desktop. Write the following bash script: </p><pre>lab@solaris:~$ <kbd>while true ; do date > /dev/null ; done</kbd> </pre><p>In your previous window/tab (where you have your root session open) run: </p><pre>root@solaris:~# <kbd>vmstat 1</kbd> </pre><p>What do you see? System time as about 70%, user time is about 30%, idle is 0%. 
+System is really busy doing something in the kernel. Imagine you don't know what has happened in the other window. What would you do? </p><pre>root@solaris:~# <kbd>top</kbd></pre> <p>...shows nothing. Not a single process in the list is generating such high load. </p><pre>root@solaris:~# <kbd>prstat</kbd> </pre><p>...doesn't help as well. OK, let's think: high system time means a lot of system calls. 
+Use DTrace and ask: which program generates the most of the system calls? </p><pre>root@solaris:~# <kbd>dtrace -n 'syscall:::entry { @num[execname] = count(); }'</kbd> </pre><p>Does it look cryptic to you? No worries: we have just instructed DTrace to count 
+("<code>count()</code>") every system call ("<code>syscall</code>") 
+when it starts ("<code>entry</code>") then aggregate that numbers of system calls by 
+program name ("<code>execname</code>") and sort the output. </p><p>Wait a little bit (DTrace is collecting the data) and press Ctrl-C. You see: 
+at the bottom of the list there is the "date" command. That means "date" is issuing a lot of system calls. We can try to find a program with the name "date": </p><pre>root@solaris:~# <kbd>ps -ef | grep date</kbd> </pre><p>Nothing. Let's try another script: what new processes are being executed? </p><pre>root@solaris:~# <kbd>dtrace -qn 'syscall::exec*:return { printf("%Y %s\n",walltimestamp,curpsinfo->pr_psargs); }'</kbd> </pre><p>Now we are counting not every system call, but just exec* system calls. 
+Then we instruct DTrace to output time and process arguments. </p>
+<p>A-ha, now we see: a lot of "date" commands are executed each second! That's why we didn't 
+see them in <code>ps -ef</code>! They just start and finish in a matter of milliseconds. But who runs all these "date" commands? Let's modify the 
+last script a little bit and make it print out not only the arguments, but also the process ID and the parent process ID: </p><pre>root@solaris:~# <kbd>dtrace -qn 'syscall::exec*:return { printf("%Y %s %d %d\n",walltimestamp,curpsinfo->pr_psargs,curpsinfo->pr_pid,curpsinfo->pr_ppid); }' </kbd></pre><p>We see a lot of strings like this: </p><pre>2011 Aug 5 20:32:24 date 28996 29016 2011 Aug 5 20:32:24 date 28997 29016 </pre><p>Now it's clear that a lot of "date" calls are generated by the 
+process ID 29016! What is that process and who has started it? </p>
+<pre>root@solaris:~# <kbd>ps -f -p 29016 </kbd>UID PID PPID C STIME TTY TIME CMD lab 29016 1608 12 16:27:26 pts/4 2:09 bash </pre><p>OK, now we know who's to blame! </p><p>Don't forget to kill the shell process which runs the infinite loop! </p>
+<p><a href="#top">Back to top</a></p><h2><a id="D.2">Exercise D.2: DTrace Disk</a> </h2><p><strong>Task:</strong> You have noticed that free disk space has decreased dramatically 
+and keeps decreasing very fast. Who is "eating" our disk space? </p><p>In this lab we are going to use DTrace Toolkit script. More about DTrace Toolkit in the 
+tip below. You don't have to run all those scripts during the lab, leave it for your homework exercise. </p><h3>DTrace Toolkit </h3><p>Another step in learning DTrace is the excellent Toolkit written by Brendan Gregg: </p>
+<pre>http://www.brendangregg.com/dtrace.html#DTraceToolkit</pre><p>The toolkit includes more than 200 very useful, well documented scripts for 
+system administrator's everyday use. Here is a short description of it's content: </p>
+<pre>http://www.solarisinternals.com/wiki/index.php/DTraceToolkit </pre><p>The good news is that it's already installed in the default Solaris 11 installation 
+and it's located here: /usr/dtrace/DTT/</p> <p>It is highly recommended to start with the most useful scripts which are located in 
+main DTT directory and are executable from command line. </p>
+
+<p>Quote from <code>http://www.solarisinternals.com/wiki/index.php/DTraceToolkit#Top_Scripts_to_Run</code> : </p>
+<p>If you have the DTraceToolkit on a misbehaving server and you don't know where to start, the following list of tools will provide the most valuable info in the shortest time: </p><p>1. <kbd>./execsnoop -v</kbd> : Look for many processes being executed quickly, as many short lived processes add considerable overhead. </p><p>2. <kbd>./iosnoop </kbd>: Watch what is happening on the disks for any unexpected activity. Check who is using the disks and the size of the disk events. </p><p>3. <kbd>./opensnoop -e</kbd> : Run <code>opensnoop</code>, learn lots. It is amazing what interesting problems <code>opensnoop</code> has unearthed. Many things are files (config files, data files, device files, libraries), and watching the open events provides a useful insight on what is really happening. </p><p>4. <kbd>./procsystime -aT</kbd> : This will show elapsed time, on-CPU time and counts for system calls. Very useful, and either -p PID or -n execname can be used to narrow examination to your target application only. </p><p>5. <kbd>./iotop -PCt8</kbd> : If disk events occured too quickly, iotop can provide a rolling summary. </p><p>6. <kbd>./rwtop -Ct8</kbd> : Rather than looking at the disk event level (<code>iosnoop</code>, <code>iotop</code>), 
+<code>rwtop</code> examines at the syscall layer. This is application I/O. Much of this may be to the file system cache, some may make it to disk, and some may be for IPC. </p><p>Also don't forget to have some fun with the scripts from Misc/ directory! </p><p><strong>Lab:</strong> To simulate this problem, we are going to use a small program that does 
+nothing but just eats disk space. First argument is the rate (in kB/sec) at which it will be eating space; 
+second argument is a name of big file we are going to create for that. (Just in case: the program is located in <code>/home/lab/bin/.</code>) </p><pre>root@solaris:~# <kbd>diskeater.py -s 100 -o /export/home/lab/bigfile</kbd> </pre><p>Open another terminal window, become a "<code>root</code>" there and check free space in your system's <code>/export/home</code> directory: </p><pre>root@solaris:~# <kbd>df -b /export/home</kbd> </pre><p>Repeat this several times and take a note how your free space is decreasing. 
+You can even try the following script to automate it: </p><pre>root@solaris:~# <kbd>while true ; do df -b /export/home ; sleep 1 ; done </kbd></pre><p>How can we find out which process is eating our disk space? Usually programs like <code>iostat</code> 
+don't give you per-process information, only per-disk I/O workload. Try this: </p><pre>root@solaris:~# <kbd>iostat -x 5</kbd> </pre><p>What do you see? Some writing activity on one of the disks, but nothing more detailed. 
+Think about other ways to solve this puzzle. Here is how it can be solved with DTrace Toolkit: </p><pre>root@solaris:~# <kbd>/usr/dtrace/DTT/rwtop</kbd> </pre><p>You will see something like this: </p><pre>
+2011 Nov 15 13:11:39,  load: 0.25,  app_r:      2 KB,  app_w:    502 KB
+
+  UID    PID   PPID CMD              D            BYTES
+60004   1710   1641 nautilus         R                0
+60004   1713   1641 updatemanagernot R                0
+60004   1722   1641 isapython2.6     R                0
+60004   1751   1641 gnome-power-mana R                0
+60004   1762   1641 nwam-manager     R                0
+60004   1735   1641 java             R                1
+60004   1763   1641 xscreensaver     W                8
+60004   1792      1 gnome-terminal   R               25
+60004    810    782 Xorg             W               32
+60004   1763   1641 xscreensaver     R               32
+60004   1735   1641 java             W               33
+60004   1792      1 gnome-terminal   W             2492
+60004    810    782 Xorg             R             2532
+60004   1811   1810 diskeater        W           512000</pre>
+
+<p>Now it's pretty easy to identify who is responsible for our free space deficit! </p><p>Don't forget to stop the <code>diskeater</code> process in the other window, otherwise the problem will 
+become very real (at least inside your virtual machine). </p>
+<p><a href="#top">Back to top</a></p>
+
+</body>
+</html>
