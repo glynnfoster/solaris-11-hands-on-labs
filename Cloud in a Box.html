@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Oracle Solaris 11 Network in a Box</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2013-04-24T12:23:11-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2013">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+
+<!-- CREATE A DIAGRAM of the proposed network and then in each step show what is already built -->
+<h1>Oracle Solaris 11 Cloud in a Box</h1>
+
+<p><strong>Task:</strong> You have to configure a secure multi-layered application environment in Oracle Solaris 11.
+</p>
+<p><strong>Lab:</strong> We will create two Solaris zones: one for database server and another for web server. We will connect the zones via an internal virtual switch to make sure the database zone is connected to the web zone, but not visible from the outside world. The web zone will have two network interfaces: one for internal connection to the database zone and another for external connection.
+</p>
+
+<h2>Network</h2>
+
+<p>Let's start with the network infrastructure. First, we create a virtual Ethernet switch, or etherstub. 
+</p>
+<pre>root@solaris:~# <kbd>dladm create-etherstub vswitch</kbd></pre>
+<p>
+We will need two virtual network interfaces for our internal network. We will call them dbint and webint as soon as they are going to be used in database zone and web zone respectively and they both are going to be internal, i.e. not visible from outside.
+</p>
+
+<pre>
+root@solaris:~# <kbd>dladm create-vnic -l vswitch dbint</kbd>
+root@solaris:~# <kbd>dladm create-vnic -l vswitch webint</kbd>
+</pre>
+<p>
+For the network zone we will need another network interface. In our example we will use the second VirtualBox network interface which is called <code>net1</code> in Solaris. Check if you have two network interfaces configured in your virtual machine:
+</p>
+
+<pre>
+root@solaris:~#<kbd> dladm show-phys</kbd>
+LINK              MEDIA                STATE      SPEED  DUPLEX    DEVICE
+net0              Ethernet             up         1000   full      e1000g0
+net1              Ethernet             up         1000   full      e1000g1
+</pre>
+
+<p>
+If there is only one network interface you have to power off your virtual machine and add the second network interface using VirtualBox Manager. Configure it as "Bridged Adapter".
+</p>
+
+<p>
+Here is how our network configuration should look like:
+</p>
+
+<img src="img/network-in-a-box-2.png" alt="Network configuration" />
+
+<h2>Zones</h2>
+
+<p>
+Now it's time to create our zones. We are going to have two zones, one for a database server (we are going to use MySQL in this example) and another for a web server (it's going to be Apache). 
+</p>
+
+<p>
+We'll start with creating a separate ZFS filesystem to store zone root directories. It will be created in our root pool and mounted at /zones.
+</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create -o mountpoint=/zones rpool/zones</kbd>
+</pre>
+
+<p>
+Zone installation process consists of three steps:
+</p>
+<ul>
+<li>zone configuraton</li>
+<li>zone profile creation</li>
+<li>zone installation</li>
+</ul>
+<p>
+Our plan is to configure and create a database zone and then clone it to create a webserver zone. This will save time and disk space.
+</p>
+
+<p>
+We start with zone configuration:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z dbzone</kbd>
+zonecfg:dbzone> create
+zonecfg:dbzone> <kbd>set zonepath=/zones/dbzone</kbd>
+zonecfg:dbzone> add net
+zonecfg:dbzone:net> set physical=dbint
+zonecfg:dbzone:net> end
+zonecfg:dbzone> exit
+</pre>
+<p>
+Next, we have to create the zone's profile where we configure networking, passwords, time zone etc.
+</p>
+
+<pre>
+root@solaris:~# <kbd>sysconfig create-profile -o /root/db-zone-profile.xml</kbd>
+</pre>
+
+<p>
+In the dialog screens set the following system's parameters (use F2 or ESC-2 to go from screen to screen):
+</p>
+
+<pre>host name: dbzone
+network: Manual
+interface: dbint
+IP address: 10.0.3.10
+root password: solaris1
+user real name: Zone User
+user id: zuser
+user password: oracle1
+time zone: select your time zone
+<!-- ???? What is the right way to setup DNS? Here or later in the zone??? -->
+everything else: accept the defaults, just press F2 or ESC-2 to continue.
+</pre>
+
+<p>
+Now, we install the database zone:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z dbzone install -c /root/dbzone-profile.xml</kbd>
+</pre>
+
+<p>
+It will take about 10 minutes, plus or minus, depending on your environment.
+</p>
+<p>
+Boot the zone and then login into it to check if everything is all right.
+</p>
+
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z dbzone boot</kbd>
+...wait a couple of minutes...
+root@solaris:~# <kbd>zlogin -C dbzone</kbd>
+</pre>
+
+<p>
+Check if networking is OK:
+</p>
+
+<pre>
+root@solaris:~# <kbd>ipadm</kbd>
+</pre>
+
+<p>
+At the next step we create a webserver zone. But instead of installing it (and waiting 10 minutes) we will just clone our existing zone to save time and disk space. So, we repeat two first steps (configuration and profile creation) and then replace the third one with the cloning operation.
+</p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z webzone</kbd>
+zonecfg:webzone> <kbd>create</kbd>
+zonecfg:webzone> <kbd>set zonepath=/zones/webzone</kbd>
+zonecfg:webzone> <kbd>add net</kbd>
+zonecfg:webzone:net> <kbd>set physical=webint</kbd>
+zonecfg:webzone:net> <kbd>end</kbd>
+zonecfg:webzone> <kbd>add net</kbd>
+zonecfg:webzone:net> <kbd>set physical=net1</kbd>
+zonecfg:webzone:net> <kbd>end</kbd>
+zonecfg:webzone> <kbd>exit</kbd>
+</pre>
+
+<pre>
+root@solaris:~# <kbd>sysconfig create-profile -o /root/web-zone-profile.xml</kbd>
+</pre>
+<p> 
+In the dialog screens set the following system's parameters:
+</p>
+<pre>
+host name: webzone
+network: Manual
+interface: webint
+IP address: 10.0.3.11
+root password: solaris1
+user real name: Zone User
+user id: zuser
+user password: oracle1
+time zone: select your time zone
+everything else: accept the defaults, just press F2 or ESC-2 to continue.
+</pre>
+
+<p>
+And now we clone our existing <code>dbzone</code> into <code>webzone</code>. Before doing that, halt the <code>dbzone</code> (we can't clone running zones).
+</p>
+<pre>
+root@solaris:~# <kbd>zoneadm -z dbzone halt</kbd>
+root@solaris:~# <kbd>zoneadm -z webzone clone -c /root/webzone-profile.xml dbzone</kbd>
+</pre>
+
+<p>
+That was faster than initial installation, wasn't it?
+</p>
+
+<p>
+Now let's boot both zones and configure networking. We want both zones communicate to each other within 10.0.3.0 network and also we want <code>webzone</code> to communicate to the outside world via net1 interface. We want to be able to reach Internet from <code>dbzone</code> too, but it should not be visible from outside. To do that, we will configure a firewall in <code>webzone</code> to provide network address translation (NAT) for <code>dbzone</code>.
+</p>
+
+<p>
+Login into <code>webzone</code>:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin webzone</kbd>
+</pre>
+
+<p>
+Configure the outgoing network interface (net1):
+</p>
+<pre>
+root@webzone:~# <kbd>dladm show-phys</kbd>
+root@webzone:~# <kbd>ipadm create-ip net1</kbd>
+root@webzone:~# <kbd>ipadm create-addr -T dhcp net1/v4</kbd>
+root@webzone:~# <kbd>ipadm</kbd>
+root@webzone:~# <kbd>exit</kbd>
+</pre>
+
+<p>
+Make sure that <code>net1</code> has received its IP address from DHCP server (for example, something like <code>192.168.1.15</code> from your home WiFi router).</p>
+
+<p>
+Make changes to <code>/etc/hosts</code> in both zones to be able to access them by names:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin webzone 'echo "10.0.3.10 dbzone" >> /etc/hosts'</kbd>
+root@solaris:~# <kbd>zlogin dbzone 'echo "10.0.3.11 webzone" >> /etc/hosts'</kbd>
+</pre>
+
+<p>Here is our final zones configuration:</p>
+
+<img src="img/network-in-a-box-3.png" alt="Zones configuration" />
+
+<p>
+Now it's time to configure NAT (Network Address Translation) to let dbzone communicate to the outside world.  Change the NAT configuration file <code>/etc/ipf/ipnat.conf</code> in the <code>webzone</code>:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin webzone</kbd>
+root@webzone:~# <kbd>echo "map net1 10.0.3.0/24 -> 0/32" > /etc/ipf/ipnat.conf</kbd>
+</pre>
+
+<p>
+Also you have to enable IP forwarding:
+</p>
+
+<pre>
+root@webzone:~# <kbd>ipadm set-prop -p forwarding=on ipv4 </kbd>
+</pre>
+
+<p>
+Reboot the zone and check the networking configuration alltogether.
+</p>
+<p>
+You should be able to ping your router's IP address from db-zone:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin db-zone </kbd>
+root@solaris:~# <kbd>ping 192.168.1.1</kbd> (replace 192.168.1.1 with your router's address)
+</pre>
+<p>
+If everything is configured correctly and you have open access to the Internet, you should be able to ping hosts outside your local network as well. Try pinging Google's DNS server:
+</p>
+
+<pre>
+ping 8.8.8.8
+</pre>
+
+<p>Our platform looks like this:</p>
+
+<img src="img/network-in-a-box-4.png" alt="Zones with NAT" />
+
+<h2>Packages</h2>
+
+<p>
+Now we are going to install some software in our cloud. To do that we need access to the default Oracle package repository <code>http://pkg.oracle.com</code>. So we have to configure DNS client service in both zones.
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin dbzone</kbd>
+</pre>
+<pre>
+root@dbzone:~# <kbd>svccfg -s dns/client 'setprop config/nameserver = net_address: 192.168.1.1'</kbd>
+root@dbzone:~# <kbd>svccfg -s name-service/switch 'setprop config/host = astring: "files dns" '</kbd>
+root@dbzone:~# <kbd>svcadm refresh name-service/switch</kbd>
+root@dbzone:~# <kbd>svcadm refresh dns/client</kbd>
+</pre>
+
+<p>
+Check:
+</p>
+
+<pre>root@dbzone:~# <kbd>ping oracle.com</kbd></pre>
+
+<pre>
+root@solaris:~# <kbd>zlogin webzone</kbd>
+root@webzone:~# <kbd>svccfg -s dns/client 'setprop config/nameserver = net_address: 192.168.1.1'</kbd>
+root@webzone:~# <kbd>svccfg -s name-service/switch 'setprop config/host = astring: "files dns" '</kbd>
+root@webzone:~# <kbd>svcadm refresh name-service/switch</kbd>
+root@webzone:~# <kbd>svcadm refresh dns/client</kbd>
+</pre>
+
+<p>
+Check: 
+</p>
+
+<pre>
+root@solaris:~# <kbd>ping oracle.com</kbd>
+</pre>
+
+For simplicity we will install the full set of AMP (Apache, MySQL, PHP) packages in both <code>dbzone</code> and <code>webzone</code>.  
+
+<pre>
+root@webzone:~# <kbd>zlogin webzone</kbd>
+root@webzone:~# <kbd>pkg install amp</kbd>
+root@webzone:~# <kbd>svcadm enable apache22</kbd>
+</pre>
+
+<p>
+Check:
+</p>
+
+<pre>
+root@webzone:~# <kbd>ipadm show-addr net1</kbd> <em>(find out the web-zone's external IP address)</em>
+</pre>
+
+<p>
+In the global zone (Solaris desktop) start the Firefox browser and enter the web-zone's IP address (in my case <code>192.168.1.15</code>) as the URL. The page should read "It works!"
+</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin dbzone</kbd>
+root@dbzone:~# <kbd>pkg install amp</kbd>
+root@dbzone:~# <kbd>svcadm enable mysql</kbd>
+</pre>
+
+<p>
+Check:
+</p>
+
+<pre>
+root@dbzone:~# <kbd>mysql -u root</kbd>
+</pre>
+
+<p>All the necessary packages are installed and services are running:</p>
+
+<img src="img/network-in-a-box-5.png" alt="Zones with Packages" />
+
+<h2>Wordpress</h2>
+
+<p>
+After we have prepared our platform, it's time to install our Wordpress application. Start with the database part:
+</p>
+<pre>
+root@solaris:~# <kbd>zlogin dbzone</kbd>
+root@dbzone:~# <kbd>mysql -u root</kbd>
+</pre>
+
+<p>
+Create a database for wordpress (we call it <code>wp01</code> here)
+</p>
+
+<pre>
+mysql> <kbd>create database wp01;</kbd>
+</pre>
+
+<p>
+Add access privileges for user '<code>wordpress</code>' from host '<code>webzone</code>' with password '<code>oracle1</code>':
+</p>
+
+<pre>
+mysql> <kbd>grant all privileges on wp01.* to 'wordpress'@'webzone' identified by 'oracle1';</kbd>
+mysql> flush privileges;
+</pre>
+
+<p>
+Download and unpack the Wordpress distibution. You can do it either from the global zone or from the webzone. Here we will download it to the global zone.  
+</p>
+
+<pre>
+root@solaris:~# <kbd>wget http://wordpress.org/latest.zip</kbd>
+root@solaris:~# <kbd>unzip latest.zip</kbd>
+</pre>
+<p>
+Now we have to enter our database parameters into Wordpress configuration. Rename the <code>wp-config-sample.php</code> file to <code>wp-config.php</code>. 
+</p>
+
+<pre>
+root@solaris:~# <kbd>cd wordpress</kbd>
+root@solaris:~/wordpress# <kbd>mv wp-config-sample.php wp-config.php</kbd>
+</pre>
+
+<p>Enter database details in wp-config.php</p>
+
+<pre>
+root@solaris:~/wordpress# <kbd>vi wp-config.php</kbd>
+</pre>
+
+<p>
+Edit the following lines:
+</p>
+
+<pre>// ** MySQL settings - You can get this info from your web host ** //
+/** The name of the database for WordPress */
+define('DB_NAME', 'wp01');
+
+/** MySQL database username */
+define('DB_USER', 'wordpress');
+
+/** MySQL database password */
+define('DB_PASSWORD', 'oracle1');
+
+/** MySQL hostname */
+define('DB_HOST', 'db-zone');
+</pre>
+
+<p>
+Now we have to copy the Wordpress distribution to the webserver document root. We can do it from the global zone:
+</p>
+
+<pre>
+root@solaris:~/wordpress# <kbd>mkdir /zones/web-zone/root/var/apache2/2.2/htdocs/blog/</kbd>
+root@solaris:~/wordpress# <kbd>cp -r * /zones/web-zone/root/var/apache2/2.2/htdocs/blog/</kbd>
+</pre>
+<p>
+Now your can install Wordpress from your browser, either from your global zone or from other computer in the same network. Open the browser and enter the URL <code>http://192.168.1.15/blog/wp-admin/install.php</code>
+</p>
+
+
+</body>
+</html>
