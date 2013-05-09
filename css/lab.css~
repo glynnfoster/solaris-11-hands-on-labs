@@ -27,6 +27,11 @@ p {
 
 ul {
 	width: 50em;
+	text-align: left;
+}
+
+img {
+	width: 500px;
 }
 
 table
