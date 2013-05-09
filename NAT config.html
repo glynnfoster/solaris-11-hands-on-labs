@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title></title>
+</head>
+<body>
+
+<p>Finally we'll configure a firewall service in this zone because we want to use it for Network Address Translation (NAT) to let the <code>dbzone</code> communicate to the outside world. Change the NAT configuration file <code>/etc/ipf/ipnat.conf</code>:
+</p>
+
+<pre>
+root@webzone:~# <kbd>echo "map net1 10.0.3.0/24 -> 0/32" > /etc/ipf/ipnat.conf</kbd>
+</pre>
+
+<p>Now enable the ipfilter service (which is responsible for NAT):</p>
+
+<pre>
+root@webzone:~# <kbd>svcadm enable ipfilter</kbd>
+root@webzone:~# <kbd>svcs *ipf*</kbd>
+STATE          STIME    FMRI
+online         17:41:54 svc:/network/ipfilter:default
+</pre>
+
+<p>You may need to check it several times until you see it online.</p>
+
+<p>
+Also you have to enable IP forwarding:
+</p>
+
+<pre>
+root@webzone:~# <kbd>ipadm set-prop -p forwarding=on ipv4 </kbd>
+</pre>
+
+
+</body>
+</html>
