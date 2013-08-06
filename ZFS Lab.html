@@ -5,7 +5,7 @@
 <title>Oracle Solaris 11 ZFS Lab</title>
 <meta name="generator" content="Bluefish 2.2.4" >
 <meta name="author" content="Pavel Anni" >
-<meta name="date" content="2013-03-20T14:09:24-0400" >
+<meta name="date" content="2013-07-17T17:08:35-0400" >
 <meta name="copyright" content="Oracle Corporation, 2011-2012">
 <link type="text/css" rel="stylesheet" href="css/lab.css" />
 </head>
@@ -111,18 +111,19 @@ Create a separate filesystem for this on our 'labpool' ZFS pool: </p><pre>root
 </pre><p>Set compression to "gzip" (there are options to gzip and other algorithms too--check the manual). You can do that also while creating the filesystem.</p>
 
 <pre>root@solaris:~# <kbd>zfs set compression=gzip labpool/zman </kbd></pre><p>Copy the first part of Solaris manuals there (it will take some time, be patient): </p><pre>root@solaris:~# <kbd>cp -rp /usr/share/man/man1 /labpool/zman/ </kbd></pre><p>Compare the sizes: </p>
-<pre>root@solaris:~# <kbd>du -sh /usr/share/man /labpool/zman</kbd> 15.2M 	/usr/share/man
-  6.8M	   /labpool/zman
+<pre>root@solaris:~# <kbd>du -sh /usr/share/man/man1 /labpool/zman/man1</kbd> 15.2M 	/usr/share/man/man1
+  6.8M	   /labpool/zman/man1
  </pre><p>We just have saved about 55% of disk space. Not bad! Check if you are able to use the manuals after compression: </p>
 <pre>root@solaris:~# <kbd>export MANPATH=/labpool/zman ; man ls</kbd> </pre>
 
+<p>Interesting to note: it may sound counterintuitive, but using compression actually <em>increases</em> file system's performance. You may think: "Compression uses extra CPU time, so it should slow down file system operations, right?". But try to think further. Imagine a file that takes two blocks on your disk. To write this file you have to write two blocks, right? If you compress this file by 50% you have to write only one block. Now the question is: "What is faster, your disk or your CPU?". Of course, it takes much less time to compress a block of data than to write it on the disk. OK, it's easy to explain, but is it confirmed by practice? Yes, it is! Take a look at the blog of Don MacAsksill and see how he had confirmed that ZFS compression increases performance: <a href="http://don.blogs.smugmug.com/2008/10/13/zfs-mysqlinnodb-compression-update/">http://don.blogs.smugmug.com/2008/10/13/zfs-mysqlinnodb-compression-update/</a>. Note that it works best when you use the default LZJB algorithm by using plain "compression=on" parameter. You might consider it a good default practice when creating ZFS file systems. There are exceptions, of course: image, video, encrypted and already compressed data will not give you this advantage as they will not be compressed. </p>
 
 <p><a href="#top">Back to top</a></p>
 
 <h2><a id="Z.4">Exercise Z.4: ZFS Deduplication</a></h2>
 
 <p><strong>Task:</strong> Users tend to keep a lot of similar files in their archives. Is it possible to save 
-space by deduplication?</p>
+space by using deduplication?</p>
 
 <p><strong>Lab: </strong>We will create a ZFS file system with deduplication turned on and see if it helps.</p>
 

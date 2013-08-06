@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <title>Oracle Solaris 11 VirtualBox Installation</title>
-<meta name="generator" content="Bluefish 2.2.3" >
+<meta name="generator" content="Bluefish 2.2.4" >
 <meta name="author" content="Pavel Anni" >
-<meta name="date" content="2012-11-26T17:17:52-0500" >
-<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<meta name="date" content="2013-07-11T14:36:02-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2013">
 <link type="text/css" rel="stylesheet" href="css/lab.css" />
 
 </head>
@@ -15,8 +15,7 @@
 
 <p>The fastest way to start with Oracle Solaris 11 Hands-on Labs is to use pre-installed Solaris 11 Virtual Machine for 
 Oracle VM VirtualBox. Other options are: installing Solaris inside VirtualBox VM from scratch using a bootable 
-ISO image or installing Solaris natively on your own computer (SPARC or x86). In this instruction we will cover the 
-first, fastest method. We assume that you have already downloaded and installed Oracle VM VirtualBox and its 
+ISO image or installing Solaris natively on your own computer (SPARC or x86). In this instruction we will cover the first, fastest method. We assume that you have already downloaded and installed Oracle VM VirtualBox and its 
 Extension Pack. For more information on how to do that go to <a href="http://www.virtualbox.org/wiki/Downloads">
 http://www.virtualbox.org/wiki/Downloads</a>. </p>
 
@@ -69,8 +68,34 @@ applications to do that depending on your host OS. The final result should be a 
 about lack of VT-x support or 'long mode is not supported'. This indicates that hardware virtualizatoin 
 is not enabled or not available on your computer. To enable hardware virtualization you have to reboot your 
 computer and enter the BIOS menu. Unfortunately, as all BIOSes are different, we can't provide exact instructions 
-where to find this option. Sometimes it's in CPU section, sometimes in Virtualization, sometimes even in Security. 
-After you have enabled hardware virtualization, try to reboot the computer and start the VM again.</p>
+where to find this option. Sometimes it's in CPU section, sometimes in Virtualization, sometimes even in Security. After you have enabled hardware virtualization, try to reboot the computer and start the VM again.</p>
+
+
+
+<h4>Important: Addendum for the Virtual Sysadmin Day July 2013</h4>
+
+<p>
+For this lab (Virtual Sysadmin Day July 2013) we have to configure our virtual machine with two network interfaces. If there is only one network interface available you have to <em>power off</em> your virtual machine and add the second network interface using VirtualBox Manager. You have to configure it as "Bridged Adapter".
+</p>
+
+<p>Use the following screenshots as a guidance.</p>
+
+<img src="img/vbox-one-network.png" alt="one network" />
+
+<p>Here is only one network configured. Press "Network".</p>
+
+<img src="img/vbox-network-config-1.png" alt="First NIC" />
+
+<p>Only one NIC is enabled. Press "Adapter 2".</p>
+
+<img src="img/vbox-network-config-2.png" alt="Bridged Ethernet" />
+
+<p>Make sure you've chosen "Bridged Ethernet" for the second adapter.</p>
+
+<img src="img/vbox-two-networks.png" alt="Two networks" />
+
+<p>Here is how it should look like with two networks.</p>
+
 
 <p><b>10. Congratulations! You are ready to start with the lab.</b></p>
 

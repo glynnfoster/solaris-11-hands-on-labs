@@ -1,8 +1,29 @@
+@page {
+  margin: 10%;
+  counter-increment: page;
+
+  @top-center {
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 2em;
+    content: counter(page);
+  }
+}
+
+
 body {
 	font-family: Verdana, Tahoma, Arial, Helvetica, sans-serif;
 	font-size: 0.875em;
 	line-height: 140%;
 	text-align: justify;
+	counter-reset: page;
+	counter-reset: section;
+}
+
+
+
+h2 {
+	page-break-before: always;
 }
 
 
@@ -34,6 +55,7 @@ img {
 	width: 500px;
 }
 
+
 table
 {
     border: 1px solid grey;
@@ -55,3 +77,5 @@ td {
     border-collapse:collapse;
 	font-size: small;
 }
+
+
