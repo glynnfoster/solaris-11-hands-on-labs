@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <title>Oracle Solaris 11 Boot Environments Lab</title>
-<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="generator" content="Bluefish 2.2.5" >
 <meta name="author" content="Pavel Anni" >
-<meta name="date" content="2013-04-19T19:20:51-0400" >
-<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<meta name="date" content="2015-04-09T09:51:45-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2013">
 <link type="text/css" rel="stylesheet" href="css/lab.css" />
 </head>
 
@@ -50,20 +50,34 @@ solaris-backup      -        126.14M  static 2011-11-15 11:09
  Somebody has distracted you and instead of removing a temporary directory, you have typed:</p>
  
  <pre>
-root@solaris:~# <kbd>rm -rf /etc/</kbd> 
+root@solaris:~# <kbd>rm -rf /usr</kbd> 
 </pre>
 
-<p>What??? You just have destroyed the whole /etc directory! All the configuration files are gone! (If you are brave enough, 
-you can remove /usr/bin too!) You have killed your system! Try to "Power Off" your virtual machine and reboot it--you'll see
+<p>What??? You just have destroyed the whole /usr directory! You have killed your system! Try '<code>ls</code>' or '<code>ps</code>' or any normal command. What do you see? Even if you try to reboot your system using '<code>init 6</code>', the result is the same: "Command not found". Try to "Power Off" your virtual machine and reboot it--you'll see
  it won't boot. Don't wait too long, 3-5 minutes is enough to be sure that it doesn't boot. 
  Hint: While waiting for the system to reboot, press the [ESC] key to see the error messages.</p>
 
 <p>
-No worries! We have a backup! And you don't have to go and find the backup tape in your fireproof cabinet, go through all the 
-hassles of restoring the unbootable system... Just when your VirtualBox VM shows you the GRUB menu, choose the "solaris-backup" item
-instead of the "Oracle Solaris 11.1" which is the default. </p>
+No worries! We have a backup! And you don't have to go and find the backup tape in your fireproof cabinet, go through all the hassles of restoring the unbootable system... Just when your VirtualBox VM shows you the GRUB menu, choose the "solaris-backup" item instead of the "Oracle Solaris 11.2" which is the default. </p>
 
-<p>It boots again! What a relief!</p>
+<div style="background-color: #dddddd"><p><strong>SPARC version.</strong> If you are using a SPARC system for this lab (for example, in Oracle Solutions Center we use logical domains for that) then you need console access to be able to choose a different Boot Environment. In the case of LDoms, you have to login in the Control Domain and stop your guest domain with <code>'ldm stop lab0'</code> (or whatever domain name you are using). Then make sure the domain will not auto-boot: <code>'ldm set-var auto-boot\?=false lab0'</code> and start the domain again: <code>'ldm start lab0'</code>. Now you can access the domain's console via <code>'telnet localhost 5000'</code>. You will see the familiar <code>'ok'</code> prompt. Then use 'boot -L' to list existing Boot Environments.</p>
+
+<pre>
+{0} ok <kbd>boot -L</kbd>
+Boot device: /virtual-devices@100/channel-devices@200/disk@0:a  File and args: -L
+1 solaris
+2 solaris-backup
+Select environment to boot: [ 1 - 2 ]: 2
+
+To boot the selected entry, invoke:
+boot [<root-device>] -Z rpool/ROOT/solaris-backup
+
+Program terminated
+{0} ok <kbd>boot -Z rpool/ROOT/solaris-backup</kbd>
+</pre>
+
+</div>
+<p><br> It boots again! What a relief!</p>
 
 <p>What now? List your boot environments again:</p>
 

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <title>Oracle Solaris 11 Networking Lab</title>
-<meta name="generator" content="Bluefish 2.2.3" >
+<meta name="generator" content="Bluefish 2.2.5" >
 <meta name="author" content="Pavel Anni" >
-<meta name="date" content="2013-02-14T13:25:26-0500" >
+<meta name="date" content="2015-04-30T13:21:51-0400" >
 <meta name="copyright" content="Oracle Corporation, 2011-2012">
 <link type="text/css" rel="stylesheet" href="css/lab.css" />
 </head>
@@ -19,7 +19,7 @@
 
 <p><strong>Task: </strong>You have to configure network interfaces and network services (DNS) in Solaris. </p>
 
-<p><strong>Lab: </strong>We have configured our Solaris virtual machine initially to use Automatic network configuration. That means that it was configured using VirtualBox's internal DHCP server. In real life usually it's not the case. Usually you configure your Solaris servers using manual mode. We will learn how to do that. We will study the default IP and DNS configuration and then use it in manual mode. We will use a new feature called Vanity Naming with allows you to give network interfaces any names you want. Note that when we use these new Solaris 11 commands, all the changes are persistent and will sustain a reboot. </p>
+<p><strong>Lab: </strong>We have configured our Solaris virtual machine initially to use Automatic network configuration. That means that it was configured using VirtualBox's internal DHCP server. In real life usually it's not the case. Usually you configure your Solaris servers using manual mode. We will learn how to do that. We will study the default IP and DNS configuration and then use it in the manual mode. We will use a new feature called Vanity Naming which allows you to give network interfaces any names you want. Note that when we use these new Solaris 11 commands, all the changes are persistent and will sustain a reboot. </p>
 
 <p>We assume that you have used the 'Automatic' network option mode during the initial system configuration for your virtual machine. You have recieved your network configuration from the VirtualBox's internal DHCP server. Check if you can access the Internet:</p>
 
@@ -28,7 +28,7 @@ root@solaris:~# <kbd>ping oracle.com</kbd>
 oracle.com is alive
 </pre>
 
-<p>If you are behind a firewall, most likely you will not be able to ping the outside network. If this is the case, try to ping one of your internal sites. </p>
+<p>If you are behind a firewall, most likely you will not be able to ping the outside network. If this is the case, try to ping one of your internal sites (e.g. your internal DNS server). Or, try '<kbd>ping 10.0.2.2</kbd>'. It's the address of your host machine as seen from inside the VM.</p>
 
 <p>Check your current configuration and record it to use in the future, when we switch to the manual mode. Enter the following commands and observe the results. </p>
 
@@ -53,7 +53,7 @@ net0              ip         ok           --         --
    net0/v6        addrconf   ok           --         fe80::a00:27ff:fec0:3b0a/10
 </pre>
 
-<p>OK, we've got the usual loopback interface and the 'net0' interface with IP address 10.0.2.15/24 which was assigned by DHCP server. Let's take a more detailed look at 'net0'.</p>
+<p>OK, we've got the usual loopback interface and the 'net0' interface with IP address 10.0.2.15/24 which was assigned by the DHCP server. Let's take a more detailed look at 'net0'.</p>
 
 <pre>root@solaris:~# <kbd>ipadm show-ifprop net0</kbd>
 IFNAME      PROPERTY        PROTO PERM CURRENT    PERSISTENT DEFAULT    POSSIBLE
@@ -109,21 +109,19 @@ nameserver	192.168.1.1
 
 <p>Note the warning in the 'resolv.conf' file. There are some changes in DNS configuration in Solaris 11, we'll talk about them later. Now, just write down your default router IP address (10.0.2.2 in case of VirtualBox installation) and your DNS server address(es) (most likely, yours are different from 192.168.1.1).</p>
 
-<p>Now, we are ready to change network management to Manual mode:</p>
+<p>Now, we are ready to change network management to the manual mode:</p>
 
 
 <pre>root@solaris:~# <kbd>netadm enable -p ncp DefaultFixed</kbd></pre>
 
-<p>Check again if you can access the Internet:</p>
+<p>Check again if you can access the Internet (again, replace <code>oracle.com</code> with one of your internal hosts if you are behind a firewall):</p>
 
 <pre>
 root@solaris:~# <kbd>ping oracle.com</kbd>
 ping: unknown host oracle.com
 </pre>
 
-<p>Again, replace oracle.com with one of your internal hosts if you are behind a firewall.</p>
-
-<p>Most likely, the reason for this error message is that we can't access any DNS servers or they are not configured at all. Check the DNS server's IP address (replace 192.168.1.1 with you have recorded while in Automatic mode):</p>
+<p>Most likely, the reason for this error message is that we can't access any DNS servers or they are not configured at all. Check the DNS server's IP address (replace 192.168.1.1 with what you have recorded while in Automatic mode):</p>
 
 <pre>
 root@solaris:~# <kbd>ping 192.168.1.1</kbd>
@@ -169,7 +167,8 @@ net0              ip         down         --         --
 <p>IP link is there, but there is no IP address assigned to it. Let's fix that.</p>
 
 <pre>
-root@solaris:~# <kbd>ipadm create-addr -a 10.0.2.15/24 net0/addr</kbd>
+root@solaris:~# <kbd>ipadm create-addr -a 10.0.2.15/24 net0</kbd>
+net0/v4
 root@solaris:~# <kbd>ipadm </kbd>
 NAME              CLASS/TYPE STATE        UNDER      ADDR
 lo0               loopback   ok           --         --
@@ -185,34 +184,12 @@ net0              ip         ok           --         --
 root@solaris:~# <kbd>ping oracle.com</kbd>
 ping: unknown host oracle.com
 root@solaris:~# <kbd>ping 10.0.2.2</kbd>
-ping: sendto Network is unreachable
+10.0.2.2 is alive
 </pre>
 
-<p>First ping failure tells us that most likely DNS is not avalable. Second ping failure indicates that we can't reach even our default gateway. The reason for that is that Solaris turned on firewall service when we switched to manual mode. It's part of the Secure by Default configuration. You can check it:</p>
-
-<pre>
-root@solaris:~# <kbd>ipfstat -io</kbd>
-block out log all
-pass out quick on lo0 all
-pass out quick proto udp from any to any port = bootps
-block in log all
-pass in quick on lo0 all
-pass in quick proto udp from any to any port = bootpc
-</pre>
-
-<p>For this lab let's just disable the firewall. In real life you have to configure firewall rules for your new net0 interface.</p>
-
-<pre>
-root@solaris:~# <kbd>ipf -D</kbd>
-root@solaris:~# <kbd>ipfstat -io</kbd>
-empty list for ipfilter(out)
-empty list for ipfilter(in)
-</pre>
-
+<p>First ping failure tells us that most likely DNS is not avalable. Second ping shows that we can at least access our default gateway. Let's continue moving further and ping our DNS server.
 <p>Ping the network again:</p>
 <pre>
-root@solaris:~# <kbd>ping 10.0.2.2</kbd>
-10.0.2.2 is alive
 root@solaris:~# <kbd>ping 192.168.1.1</kbd> <em>(replace 192.168.1.1 with your DNS server IP address)</em>
 ping: sendto No route to host
 </pre>
@@ -234,7 +211,7 @@ Routing Table: IPv6
 ::1                         ::1                         UH      2      12 lo0   
 </pre>
 
-<p>Add the default gateway and check again:</p>
+<p>Yes, indeed. There is no default gateway. Add the default gateway and check again:</p>
 
 <pre>
 root@solaris:~# <kbd>route -p add default 10.0.2.2</kbd>
@@ -281,7 +258,7 @@ oracle.com is alive
 </pre>
 
 
-<p>Do you remember the days when you were a junior Solaris system administrator 
+<p><strong>New names.</strong> Do you remember the days when you were a junior Solaris system administrator 
 and wondered why all network interfaces in Solaris have these funny names? 
 <code>le, bge, ce, xge, e1000g...</code>. 
 Now, as you can see, they all are called net0, net1, net2, ... 
@@ -377,6 +354,7 @@ root@solaris:~# <kbd>dladm show-link</kbd>
 
 <p>Find more food for thought and inspiration here: </p>
 <ul>
+<li>Strategies for Network Administration in Oracle Solaris 11.2 <a href="http://docs.oracle.com/cd/E36784_01/html/E37473/index.html">http://docs.oracle.com/cd/E36784_01/html/E37473/index.html</a></li>
 <li>How to get started configuring your network in Oracle Solaris 11 <a href="http://www.oracle.com/technetwork/articles/servers-storage-dev/s11-network-config-1632927.html">http://www.oracle.com/technetwork/articles/servers-storage-dev/s11-network-config-1632927.html</a></li>
 <li>How to Script Oracle Solaris 11 Zones Creation for a Network-In-a-Box Configuration<br>
 <a href="http://www.oracle.com/technetwork/articles/servers-storage-admin/o11-118-s11-script-zones-524499.html">http://www.oracle.com/technetwork/articles/servers-storage-admin/o11-118-s11-script-zones-524499.html</a></li>

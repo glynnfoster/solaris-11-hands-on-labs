@@ -22,23 +22,19 @@ body {
 
 
 
-h2 {
-	page-break-before: always;
-}
-
 
 pre {
-	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-family: Consolas, monospace, Lucidatypewriter, Courier, "Courier New", courier;
 	font-weight: normal;
 }
 
 kbd {
-	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-family: Consolas, monospace, Lucidatypewriter, Courier, "Courier New", courier;
 	font-weight: bold;
 }
 
 code {
-	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-family: Consolas, monospace, Lucidatypewriter, Courier, "Courier New", courier;
 	font-weight: normal;
 }
 
@@ -46,13 +42,34 @@ p {
 	width: 50em;
 }
 
-ul {
+ul.text {
 	width: 50em;
 	text-align: left;
 }
 
+ol.text {
+	width: 50em;
+	text-align: left;
+}
+
+
+ul.table {
+	text-align: left;
+	list-style-type: disc;
+	list-style-position: outside;
+	padding-left: 16px;
+}
+
+li {
+		width: 50em;
+    text-align: left;
+}
+
 img {
-	width: 500px;
+	max-width: 600px;
+	display: block;
+    width: auto;
+    height: auto;
 }
 
 
@@ -62,20 +79,35 @@ table
     border-collapse: collapse;
     width: 50em;
 }
-th {
-    background-color:grey;
-    color:white;
+
+th.text {    
     padding:4px 7px 4px 7px;
     border: 1px solid grey;
     border-collapse:collapse;
 	font-size: small;
 }
 
-td {
+td.text {
     padding:4px 7px 4px 7px;
     border: 1px solid grey;
     border-collapse:collapse;
 	font-size: small;
+	vertical-align: top;
+}
+
+th.catalog {    
+    padding:2px;
+    border: 1px solid grey;
+    border-collapse:collapse;
+	font-size: small;
+}
+
+td.catalog {
+    padding:2px;
+    border: 1px solid grey;
+    border-collapse:collapse;
+	font-size: small;
+	vertical-align: top;
 }
 
 

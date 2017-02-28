@@ -3,16 +3,83 @@
 <head>
 <meta charset="utf-8" />
 <title>Oracle Solaris 11 IPS Lab</title>
-<meta name="generator" content="Bluefish 2.2.3" >
-<meta name="author" content="Pavel Anni" >
-<meta name="date" content="2013-02-15T12:05:02-0500" >
-<meta name="copyright" content="Oracle Corporation, 2011-2012">
+<meta name="generator" content="Bluefish 2.2.8" >
+<meta name="author" content="panni" >
+<meta name="date" content="2016-05-11T17:20:28-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2015">
 <link type="text/css" rel="stylesheet" href="css/lab.css" />
 </head>
 <body>
 <h1>Oracle Solaris 11 IPS Lab</h1>
 
-<p>One of the main new features in Solaris 11 is a new packaging system, called IPS (Image Packaging System). In this lab we will explore its capabilities and learn how to work with packages from System Administrator's perspecitve.</p>
+<p>One of the main new features in Oracle Solaris 11 is a new packaging system, called IPS (Image Packaging System). In this lab we will explore its capabilities and learn how to work with packages from System Administrator's perspective.</p>
+
+<h2><a id="P.0">Exercise P.0: Repository installation</a></h2>
+
+<p><strong>Note: </strong>you don't have to perform this lab, if you have access to the online repository at oracle.com. To test that, type: <code>'pkg list -a | wc -l'</code>. If the output shows some large number (more than 3500) then you have access to the full Solaris repository and can skip this step. Even in this case you can choose to perform this exercise for training purposes.  </p>
+
+<p>Before we started working with IPS we have to install a repository into our Oracle Solaris instance. It's a preparatory exercise, but you may use the same commands to install an internal repository in your network. For this lab we have created a small repository, just big enough to perform our lab exercises. In real life you will download and install the full repository from oracle.com. With a proper support contract from Oracle you will get access to the support repository and be able to update your local repository periodically. </p>
+
+<p>Open the USB stick provided by your instructor, or the local folder where you have copied all the files to. There is a file called <code>'repo.iso'</code>. We have to add it as a virtual DVD to the lab virtual machine. First, shutdown the Solaris instance in the VM. Then go to the Lab VM's settings and click on "Storage".   </p>
+
+<img src="img/VM-Storage.png" alt="VM Storage">
+
+<p>
+Then click on "Add optical drive" icon:
+</p>
+
+<img src="img/VM-optical drive.png" alt="VM optical drive">
+
+<p>
+And on the next dialog click on "Choose disk":</p>
+
+<img src="img/VM-optical file.png" alt="VM optical file">
+
+<p>Then find the <code>'repo.iso'</code> file in your file system and add it to the virtual machine.</p>
+
+<img src="img/VM-repo disk.png" alt="VM repo disk">
+
+<p>After this is done, start the virtual machine the usual way. After you logged in as 'lab', check if you see the mounted CD-ROM on your desktop. </p>
+
+<img src="img/Dekstop with CD" alt="Dekstop with CD">
+
+<p>If everything is OK, open the terminal, become root and configure the repository. Start with creating a separate ZFS file system for that.</p>
+
+<pre>
+root@solarislab:~# <kbd>zfs create -o mountpoint=/repo -o compress=on rpool/repo</kbd>
+</pre>
+
+<p>Check if you have your repository on that CDROM file:</p>
+
+<pre>
+root@solarislab:~# <kbd>ls /media/CDROM</kbd>
+pkg5.repository  publisher
+</pre>
+
+<p>Copy all the files from the repository to the new file system:</p>
+
+<pre>
+root@solarislab:~# <kbd>rsync -aP /media/CDROM/* /repo</kbd>
+</pre>
+
+<p>And then update the repository index and configure the IPS server:</p>
+
+<pre>
+root@solarislab:~# <kbd>pkgrepo rebuild -s /repo</kbd>
+root@solarislab:~# <kbd>svccfg -s application/pkg/server setprop pkg/inst_root=/repo</kbd>
+root@solarislab:~# <kbd>svcadm refresh application/pkg/server</kbd>
+root@solarislab:~# <kbd>svcadm enable application/pkg/server</kbd>
+root@solarislab:~# <kbd>pkg set-publisher -G '*' -M '*' -g http://10.0.2.15/ solaris</kbd>
+</pre>
+
+<p>Check available packages. There should be about 900 of then (as we said, it's a small repository). If you see something significantly different, discuss it with your instructor and decide on how to move ahead. </p>
+
+<pre>
+root@solarislab:~# <kbd>pkg list -a | wc</kbd>
+     977    2932   79174
+</pre>
+
+<p>Well, now the system is ready for the IPS and Virtualization labs.</p>
 
 
 <h2><a id="P.1">Exercise P.1: IPS Basics</a></h2>
@@ -21,8 +88,7 @@
 
 <p><strong>Lab: </strong>We will learn some basic IPS commands used to look for a package, inquire about its content etc. When we found the package we needed, we install it.</p>
 
-<p>Let's imagine we want to do some network load testing, 
-so we want to run the utility called 'iperf'. Try to run this command and find out that it's not installed:</p>
+<p>Let's imagine we want to do some network load testing, so we want to run the utility called 'iperf'. Try to run this command and find out that it's not installed (don't be surprised by <code>"command not found"</code> message:</p>
 
 <pre>root@solaris:~# <kbd>iperf</kbd></pre>
 
@@ -42,6 +108,12 @@ so we want to run the utility called 'iperf'. Try to run this command and find o
 
 <p>Let's now do a local search for iperf (among the installed packages). It will find nothing:</p>
 <pre>root@solaris:~# <kbd>pkg search -l iperf</kbd></pre>
+<p>You may get the following message after this command:</p>
+<pre>
+pkg: Search performance is degraded.
+Run 'pkg rebuild-index' to improve search speed. 
+</pre>
+<p>So, if you really want to improve search speed, then go ahead and rebuild the index as instructed. However, it is not critical for the rest of the lab.</p>
 <p>Now do the same search, without the -l flag so it goes to the repository:</p>
 <pre>root@solaris:~# <kbd>pkg search iperf</kbd></pre>
 <p>Next we get some information about the package like date of creation, version number, etc.</p>
@@ -49,7 +121,11 @@ so we want to run the utility called 'iperf'. Try to run this command and find o
 <p>And we can see exactly what files make up the package:</p>
 <pre>root@solaris:~# <kbd>pkg contents -r iperf</kbd></pre>
 <pre>root@solaris:~# <kbd>pkg search benchmark/iperf:depend::</kbd></pre>
-<p>And now we install the <code>iperf</code> package:</p>
+<p>Now, after we have learned everything about the package we are about to install, we can try a "dry run" before actually installing it:</p>
+<pre>root@solaris:~# <kbd>pkg install -n iperf</kbd></pre>
+<pre>root@solaris:~# <kbd>pkg install -nv iperf</kbd></pre>
+
+<p>If we are satisfied with the results, we can install the <code>iperf</code> package:</p>
 <pre>root@solaris:~# <kbd>pkg install iperf</kbd></pre>
 <p>Here we demonstrate what kind of metadata is kept in IPS:</p>
 <pre>root@solaris:~# <kbd>pkg contents -t file -o owner,group,mode,pkg.size,path iperf</kbd></pre>

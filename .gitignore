@@ -1,1 +1,14 @@
 *~
+*.pdf
+*.doc
+*.docx
+*.odt
+Sean/*
+events/*
+Marketing/*
+Surveys/*
+Video/*
+Presentations/*
+Pictures/*
+Photos/*
+'OSC Resources'/*
