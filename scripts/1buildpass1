@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# This script is for a Solaris 11 primary domain only...
+
+# Services definitions
+VCC_START=5000
+VCC_END=5100
+PRIMARY_VCC="primary-vcc0"
+
+PRIMARY_VDS="primary-vds0"
+
+NET_DRIVER="net0"
+VSW_SERVICE="primary-vsw0"
+
+# Control Domain definitions
+PRIMARY_CORES=3
+# PRIMARY_CRYPTO=2
+PRIMARY_MEM=60G
+
+CONFIG="lab"
+
+
+
+build ()
+{
+    echo "Building primary services..."
+    
+    # Create a virtual console concentrator (vcc) service for use by the
+    # virtual network terminal server daemon (vntsd) and as a concentrator
+    # for all logical domain consoles
+    ldm add-vcc port-range=${VCC_START}-${VCC_END} ${PRIMARY_VCC} primary
+    
+    # Create a virtual disk server (vds) to allow importing virtual disks
+    # into a logical domain
+    ldm add-vds ${PRIMARY_VDS} primary
+    
+    # Create a virtual switch service (vsw) to enable networking between
+    # virtual network (vnet) devices in logical domains
+    ldm add-vsw net-dev=${NET_DRIVER} ${VSW_SERVICE} primary
+    
+    ldm list-services primary
+    
+    echo "Configuring Primary Domain..."
+    
+    ldm set-core ${PRIMARY_CORES} primary
+    # ldm set-crypto ${PRIMARY_CRYPTO} primary
+    ldm start-reconf primary
+    ldm set-memory ${PRIMARY_MEM} primary
+    
+    ldm set-domain extended-mapin-space=on primary
+    
+    # Interesting that docs refer to "add-config" and "list-config" but
+    # man pages do not. Yet they function! I'll use the newer sp
+    # variants.
+    #
+    # TODO:
+    #   - append date/time stamp to config name
+    #   - delete step in destroy() that removes the config
+    #     (i.e. rather than symmetrically add/remove, just keep adding)
+    
+    ldm add-spconfig ${CONFIG}`date +%F_%T`
+    
+    ldm list-spconfig
+    
+    echo "Time for a reboot!"
+}
+
+destroy ()
+{
+    # In theory I should really be restoring the factory default config.
+    # However, for purposes of this exercise it's not necessary...
+    
+    # NOTE: I'll leave deleting configs from SP for a manual exercise
+    # as they are now time-stamped...
+    
+    #echo "Deleting ${CONFIG} config from SP..."
+    #ldm remove-spconfig ${CONFIG}
+    
+    echo "Destroying primary services..."
+    ldm remove-vcc ${PRIMARY_VCC}
+    ldm remove-vds ${PRIMARY_VDS}
+    ldm remove-vsw ${VSW_SERVICE}
+    ldm list-services primary
+}
+
+[ $# -eq 0 ] && { echo "Usage: $0 (check | build | destroy)"; exit 1; }
+
+if [ $1 = "check" ]; then
+    ldm list-services primary;
+elif [ $1 = "build" ]; then
+    build; 
+elif [ $1 = "destroy" ]; then
+    destroy;
+else
+    echo "What are you trying to say? :-)";
+fi
+
+exit

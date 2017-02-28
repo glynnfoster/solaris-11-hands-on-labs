@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title></title>
+</head>
+<body>
+<h1>Updating your Oracle Solaris 11 installation with IPS and Boot Environments</h1>
+
+<p>You have just installed Oracle Solaris 11 on your system or you have received a brand new system from Oracle with Solaris already installed. Now you want to update it to the latest version. First, let's figure out which version we are currently running. </p>
+
+<pre>
+root@solaris:~# <kbd>uname -a</kbd>
+SunOS solaris 5.11 11.2 i86pc i386 i86pc
+</pre>
+
+<p>OK, it's Solaris 11.2, but which update? 
+</p>
+
+<pre>
+root@solaris:~# <kbd>pkg list entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.2.0.0.42.0    i--
+</pre>
+
+<p>With the command above we inquire information about a special package called 'entire'. As you can easily guess, it's a package that represents the entire Solaris installation and it's the best indicator of the version we are currently running. Now look at the 'version' column. First part of the version before the dash ('-') is called 'component version'. If the package is tightly integrated with Solaris development cycle (i.e. part of base Solaris set of packages) then this number will follow Solaris base version which is reported by '<code>uname -r</code>'. Some packages have their own development cycle and this number will be different.
+</p>
+
+<p>Just out of curiosity: how many packages belong to the first group and how many - to the second? In our default lab installation:</p>
+
+<pre>
+root@solaris:~# <kbd>pkg list | grep  '0.5.11' | wc -l</kbd>
+     403
+root@solaris:~# <kbd>pkg list | grep -v '0.5.11' | wc -l</kbd>
+     489
+</pre>
+
+<p>The second part after the dash ('-') is called 'branch version' and it contains the information we need. First number after the zero is '175' and it's the build number of this major Solaris release. The number after that--in our case it's '2' and it indicates the update number--that means we are running Oracle Solaris 11 update 2, or Oracle Solaris 11.2. The number which goes after it is the SRU (Service Repository Update) number. It is '0' in our case and that means we have installed the 'release' version of Solaris 11.2 and didn't update it yet. </p>
+
+<p>Service Repository Updates (SRU) is a bunch of package updates with bug fixes which is issued periodically (usually monthly). If you have just installed Solaris from a downloaded DVD image, then you have 'release' version with SRU number '0'. If it's a system you received from Oracle (SPARC or x86) with preinstalled Solaris, most likely it will have SRU number which was current at the moment of shipment. </p>
+
+<p>The rest of the version number includes development internal build numbers etc. which are not really important for deployment purposes. </p>
+
+<p>You can find more details about Oracle Solaris versioning here: http://docs.oracle.com/cd/E36784_01/html/E36856/pkgos.html#PKDEVglyvm</p>
+
+
+
+<p>You can find more details about SRU and Support Repositories at My Oracle Support (Doc ID 1021281.1)</p>
+
+</body>
+</html>

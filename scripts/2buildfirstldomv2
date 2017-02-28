@@ -1,0 +1,110 @@
+#!/usr/bin/bash
+ #####   ######    ##    #####   #    #  ######
+ #    #  #        #  #   #    #  ##  ##  #
+ #    #  #####   #    #  #    #  # ## #  #####
+ #####   #       ######  #    #  #    #  #
+ #   #   #       #    #  #    #  #    #  #
+ #    #  ######  #    #  #####   #    #  ######
+
+# There are a few variables you must change:
+#
+# FIRST_DOMAIN should be changed to reflect the first domain number
+# for the server, if you have more than one. Ex: I had two servers
+# each hosting 12 guest domains. I set the first server's
+# FIRST_DOMAIN to 01; the other to 13
+#
+# There's a line that sets auto-boot? to true or false, depending
+# on preference
+#
+# 
+
+# This script is for a Solaris 11 primary domain only...
+
+# Global variables
+
+# Variables from script "buildpass1"
+
+# Services definitions
+
+PRIMARY_VDS="primary-vds0"
+
+VSW_SERVICE="primary-vsw0"
+
+# Variables for this script
+
+DATAPOOL="dpool"
+LDOM_VOLS=${DATAPOOL}/ldoms
+ROOT_DISK="disk0"
+ROOT_DISK_SIZE="60GB"
+
+BASE_DOMAIN_NAME="dom"
+FIRST_DOMAIN=${BASE_DOMAIN_NAME}01
+
+GUEST_CORES=1
+GUEST_MEM=32G
+
+VNET_NAME="vnet1"
+
+# for i in `seq -v FIRST LAST ; do echo $i ; done
+
+build ()
+{
+    echo "Creating ZFS filesystem to hold ZFS volumes..."
+    zfs create ${LDOM_VOLS}
+    echo "Creating ZFS filesystem for ${FIRST_DOMAIN}"
+    zfs create ${LDOM_VOLS}/${FIRST_DOMAIN}
+    
+    echo "Configuring first LDOM..."
+    
+    ldm add-domain ${FIRST_DOMAIN}
+    ldm set-core ${GUEST_CORES} ${FIRST_DOMAIN}
+    ldm set-memory ${GUEST_MEM} ${FIRST_DOMAIN}
+    
+    # not sure if three is enough...
+    ldm add-vnet alt-mac-addrs=auto,auto,auto ${VNET_NAME} ${VSW_SERVICE} ${FIRST_DOMAIN}
+    
+    echo "Creating root disk image for ${FIRST_DOMAIN}"
+    zfs create -V ${ROOT_DISK_SIZE} ${LDOM_VOLS}/${FIRST_DOMAIN}/${FIRST_DOMAIN}_${ROOT_DISK}
+    echo "Wiring up disk image to disk service"
+    ldm add-vdsdev /dev/zvol/dsk/${LDOM_VOLS}/${FIRST_DOMAIN}/${FIRST_DOMAIN}_${ROOT_DISK} \
+        ${FIRST_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS}
+    echo "Connecting disk image to LDOM"
+    ldm add-vdisk ${FIRST_DOMAIN}_${ROOT_DISK} \
+        ${FIRST_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS} \
+        ${FIRST_DOMAIN}
+    
+    # ***** Might want to set this to "true" later...
+    #
+    ldm set-var auto-boot\?=true ${FIRST_DOMAIN}
+    ldm set-var boot-device=${FIRST_DOMAIN}_${ROOT_DISK} ${FIRST_DOMAIN}
+    ldm bind-domain ${FIRST_DOMAIN}
+    
+    ldm list-domain ${FIRST_DOMAIN}
+    ldm list-bindings ${FIRST_DOMAIN}
+}
+
+destroy ()
+{
+    ldm stop-domain ${FIRST_DOMAIN}
+    ldm unbind-domain ${FIRST_DOMAIN}
+    ldm remove-vdisk ${FIRST_DOMAIN}_${ROOT_DISK} ${FIRST_DOMAIN}
+    ldm remove-vdsdev ${FIRST_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS}
+    ldm remove-vnet ${VNET_NAME} ${FIRST_DOMAIN}    
+    ldm remove-domain ${FIRST_DOMAIN}
+    zfs destroy -r ${LDOM_VOLS}
+}
+
+[ $# -eq 0 ] && { echo "Usage: $0 (check | build | destroy)"; exit 1; }
+
+if [ $1 = "check" ]; then
+    ldm list-domain ${FIRST_DOMAIN}
+    ldm list-bindings ${FIRST_DOMAIN}
+elif [ $1 = "build" ]; then
+    build; 
+elif [ $1 = "destroy" ]; then
+    destroy;
+else
+    echo "What are you trying to say? :-)";
+fi
+
+exit 0

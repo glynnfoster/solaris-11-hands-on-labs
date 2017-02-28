@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 ZFS Tips and Tricks</title>
+<meta name="generator" content="Bluefish 2.2.2" >
+<meta name="author" content="Pavel" >
+<meta name="date" content="2013-12-23T10:27:19-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2014">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1>Oracle Solaris 11 ZFS Tips and Tricks</h1>
+
+<p>Some time ago we used hands-on exercises to learn some basics operations with Oracle Solaris ZFS. We have learned how to create ZFS pools and file systems, how to use compression and deduplication, how to create shapshots and clones. In this lab we are going to go a little further and learn some advanced ZFS topics. We are going to learn how to let your users to create their own snapshots and restore from them; how to create file systems that have guaranteed amount of space; how to migrate file systems between pools and hosts. </p>
+
+<p>In the lab we are going to use a VirtualBox Solaris VM, but you can use other systems with Oracle Solaris 11.1 that are available to you.</p>
+
+<p>In this lab we are going to create and use an additional ZFS pool, so we have to create a disk for that. Stop the virtual machine and open VirtualBox Manager. In the VM configuration panel open the Storage part. Add an extra controller and a disk connected to that controller. See the snapshots below.</p>
+
+<p>Now we are ready for the lab. Start the VM and go ahead with the first exercise.</p>
+
+<h2>ZFS Reservations</h2>
+
+<p>Remember, when you worked on our <a href="http://www.youtube.com/watch?v=ctIOcT5g6zk" name="ZFS Hands-on Lab Jan 2013">previous ZFS lab</a> (about a year ago on a similar event), you have created a ZFS pool and then couple of ZFS file systems in it? Do you remember how much space was available to the file systems? You are right, all the space that is available in the whole pool, is available to all file systems that are created on that pool. Is it good? Of course! You don't have to carefully calculate how much space you will need for this particular file system, you just use it! And when you need more, you just add more disks to the pool and more space is immediately available to all file systems! </p>
+
+<p>Yes, it's good and very convenient, but... All file systems share the same pool and those of them who grab their space faster, eventually will take over the whole pool and no space will remain available to other file systems who are not that greedy. Yes, you can add disks, but it takes time and your users don't want to wait. What can be done to prevent those greedy file systems from hijacking the whole ZFS pool? You can use quotas to limit their appetite, but there is better solution. You can do just the opposite to quotas: instead of setting the maximum space allocation, you can set the minimum, guaranteed space for the most important file systems.  </p>
+
+<p>Imagine you have a Big Boss who wants to have a guaranteed space for his projects and files in a file system. And you have a Little Boss who is not that demanding. We will use this example to demonstrate how ZFS can handle this situation. Let's start with creating a ZFS pool where we are going to store data from both bosses. First, figure out what disks are available on your system.</p>
+
+<pre>
+root@solaris:~# <kbd>echo | format</kbd> <em>(this command prevents format from going into interactive mode)</em>
+Searching for disks...done
+
+
+AVAILABLE DISK SELECTIONS:
+       0. c7t0d0 <ATA-VBOX HARDDISK-1.0-16.00GB>
+          /pci@0,0/pci8086,2829@d/disk@0,0
+       1. c8t0d0 <VBOX-HARDDISK-1.0 cyl 1022 alt 2 hd 64 sec 32>
+          /pci@0,0/pci1000,8000@16/sd@0,0
+Specify disk (enter its number): Specify disk (enter its number): 
+root@solaris:~# 
+</pre>
+
+<p>OK, two disks are installed in the system. Which one is taken by the root pool and which one is available to create another ZFS pool?</p>
+
+<pre>
+root@solaris:~# <kbd>zpool status</kbd>
+  pool: rpool
+ state: ONLINE
+  scan: none requested
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	rpool       ONLINE       0     0     0
+	  c7t0d0s1  ONLINE       0     0     0
+
+errors: No known data errors
+
+</pre>
+
+<p>That means that <code>c7t0d0</code> is taken by <code>rpool</code> and we can use <code>c8t0d0</code> to create an additional ZFS pool. Let's do that.</p>
+
+<pre>
+root@solaris:~# <kbd>zpool create labpool c8t0d0</kbd>
+</pre>
+
+<p>Now we have our own pool; let's create a file system for our Little Boss. He is not very demanding, so we create a default file system.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create labpool/littleboss</kbd>
+root@solaris:~# <kbd>zfs list</kbd>
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                  124K   976M    32K  /labpool
+labpool/littleboss        31K   976M    31K  /labpool/littleboss
+rpool                   5.88G  9.50G  4.90M  /rpool
+rpool/ROOT              4.07G  9.50G    31K  legacy
+rpool/ROOT/solaris      4.07G  9.50G  3.77G  /
+rpool/ROOT/solaris/var   201M  9.50G   196M  /var
+rpool/VARSHARE          52.5K  9.50G  52.5K  /var/share
+rpool/dump               792M  9.53G   768M  -
+rpool/export             868K  9.50G    32K  /export
+rpool/export/home        836K  9.50G    32K  /export/home
+rpool/export/home/lab    804K  9.50G   804K  /export/home/lab
+rpool/swap              1.03G  9.53G  1.00G  -
+
+</pre>
+
+<p>Let's create another file system, this time for Big Boss. </p>
+<pre>
+root@solaris:~# <kbd>zfs create labpool/bigboss</kbd>
+root@solaris:~# <kbd>zfs list</kbd>
+root@solaris:~# zfs list
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                  162K   976M    33K  /labpool
+labpool/bigboss           31K   976M    31K  /labpool/bigboss
+labpool/littleboss        31K   976M    31K  /labpool/littleboss
+. . .
+</pre>
+
+<p>
+You see: available space in both file systems is the same and it's equal to the space available in the whole pool. Try to create a big file in Boss' file system:
+</p>
+
+<pre>
+root@solaris:~# <kbd>mkfile 200m /labpool/littleboss/bigfile</kbd>
+root@solaris:~# <kbd>zfs list</kbd>
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                  200M   776M    33K  /labpool
+labpool/bigboss           31K   776M    31K  /labpool/bigboss
+labpool/littleboss       200M   776M   200M  /labpool/littleboss
+. . .
+<em>(it may take a second to get exactly 200M. If the number is smaller, try zfs list again)</em>
+</pre>
+
+<p>You see: Little Boss' file just has taken 200 MB of space - from <em>both</em> file systems! Big Boss might not like it. He wants to make sure that he has at least 500 MB of space for his files! OK, let's use <strong>ZFS reservation</strong>:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs set reservation=500m labpool/bigboss</kbd>
+root@solaris:~# <kbd>zfs list</kbd>
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+labpool                  700M   276M    33K  /labpool
+labpool/bigboss           31K   776M    31K  /labpool/bigboss
+labpool/littleboss       200M   276M   200M  /labpool/littleboss
+. . .
+</pre>
+
+<p>Now Big Boss has the same amount available, 776 MB, but we just have cut 500 MB of space from Little Boss. And this space is <em>reserved</em> for Big Boss. He is happy now.</p>
+
+
+<p>After you are done with this, destroy both filesystems to clean up the pool for future exercises. </p>
+
+<pre>
+root@solaris:~# <kbd>zfs destroy labpool/bigboss </kbd>
+root@solaris:~# <kbd>zfs destroy labpool/littleboss </kbd>
+</pre>
+
+<h2>ZFS Delegation</h2>
+
+<p>Remember, in our previous ZFS lab we created file system snapshots and then used them to restore files we have "accidentally" deleted? It would be great if it was possible to give your users rights to create and restore snapshots on their own, without distracting you, sysadmin, from more important tasks?</p>
+
+<p>Yes, it's possible! You can delegate these rights to your users. Let's create a user Joe  and give him rights to manage his own home directory, i.e. file system (remember, in Solaris 11 <code>useradd</code> operation creates a ZFS file system for the user, not just a directory!).</p>
+
+<pre>
+root@solaris:~# <kbd>useradd -c "Joe User" -m joe</kbd>
+80 blocks
+root@solaris:~# <kbd>passwd joe</kbd>
+New Password: 
+Re-enter new Password: 
+passwd: password successfully changed for joe
+root@solaris:~# <kbd>zfs allow joe create,destroy,mount,snapshot rpool/export/home/joe</kbd>
+</pre>
+
+<p>Now become Joe and create a file. After that, create a snapshot and "accidentally" delete the file you have just created:</p>
+
+<pre>
+root@solaris:~# <kbd>su - joe</kbd>
+Oracle Corporation	SunOS 5.11	11.1	September 2012
+joe@solaris:~$ 
+joe@solaris:~$ <kbd>vi firstfile.txt</kbd>
+joe@solaris:~$ <kbd>cat firstfile.txt</kbd>
+This is my first file.
+joe@solaris:~$ <kbd>pwd </kbd>
+/export/home/joe
+joe@solaris:~$ <kbd>zfs snap rpool/export/home/joe@snap1</kbd>
+joe@solaris:~$ <kbd>rm firstfile.txt </kbd>
+joe@solaris:~$ <kbd>cat firstfile.txt</kbd>
+cat: cannot open firstfile.txt: No such file or directory
+</pre>
+
+<p>Yes, the file is gone. But Joe is a smart guy, he has taken a snapshot after he created the file. But he just forget the name of the snapshot... Let's figure it out: </p>
+
+<pre>
+joe@solaris:~$ <kbd>zfs list -t all | grep joe</kbd>
+rpool/export/home/joe                             56K  8.52G  35.5K  /export/home/joe
+rpool/export/home/joe@snap1                     20.5K      -  35.5K  -
+</pre>
+
+<p>OK, now Joe knows the name and tries to rollback the snapshot:</p>
+
+<pre>
+joe@solaris:~$ <kbd>zfs rollback rpool/export/home/joe@snap1</kbd>
+cannot rollback 'rpool/export/home/joe': permission denied
+</pre>
+
+<p>
+What? A-ha, we forgot to add <code>rollback</code> to the list of rights for Joe. Let's fix that:
+</p>
+
+<pre>
+joe@solaris:~$ <kbd>exit</kbd>
+logout
+root@solaris:~# <kbd>zfs allow joe rollback rpool/export/home/joe</kbd>
+root@solaris:~# <kbd>su - joe</kbd>
+Oracle Corporation	SunOS 5.11	11.1	September 2012
+joe@solaris:~$ <kbd>zfs rollback rpool/export/home/joe@snap1</kbd>
+joe@solaris:~$cat firstfile.txt  <kbd>ls </kbd>
+firstfile.txt  local.cshrc    local.login    local.profile
+joe@solaris:~$ <kbd>cat firstfile.txt </kbd>
+This is my first file.
+</pre>
+
+<p>What a relief for Joe! And what a relief for you--now your users can manage their filesystems on their own! Joe can even create new file systems under his home directory. Try this as Joe to test if it's possible.</p>
+
+
+<h2>ZFS Shadow Migration</h2>
+
+<p>You may have to migrate your data to a new location. For instance, you just have connected a new disk array with really fast disks and you want to move your data from the old array with slow disks. Or, you may want to turn on compression on the file system and you know that compression only works for future data, not for existing data. To make all data compressed you have to re-write all your data. If your dataset is large, it may take significant time. You don't want to wait, you want to start using your data as if it was already in the new location. ZFS Shadow Migration is created exactly for this situation.</p>
+
+<p>For this exercise we will use our manual pages directory. First, we will create a separate file system and copy all manual pages there. We'll change the MANPATH variable to make sure we are using manual files from that file system. After that, we will create a new file system on our ZFS pool labpool and configure it for shadow migration. We will change MANPATH again to point to that new file system and check if we can read system manuals while the data is being migrated. </p>
+
+<p>Shadow migration is created as a separate package and separate service. To use it, we have to install the package and enable the service.</p>
+
+<pre>
+root@solaris:~# <kbd>pkg install shadow-migration</kbd>
+           Packages to install:  1
+       Create boot environment: No
+Create backup boot environment: No
+            Services to change:  1
+
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                                1/1         14/14      0.2/0.2  734k/s
+
+PHASE                                          ITEMS
+Installing new actions                         39/39
+Updating package state database                 Done 
+Updating image state                            Done 
+Creating fast lookup database                   Done 
+root@solaris:~# <kbd>svcadm enable shadowd</kbd>
+</pre>
+
+<p>Start with creating a file system and copying the manuals there:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create rpool/mancopy</kbd>
+root@solaris:~# <kbd>cp -rp /usr/share/man/* /rpool/mancopy</kbd>
+</pre>
+
+<p>Set MANPATH and try to read a manual page:</p>
+
+<pre>
+root@solaris:~# <kbd>export MANPATH=/rpool/mancopy</kbd>
+root@solaris:~# <kbd>man ls</kbd>
+Reformatting page.  Please Wait... done
+</pre>
+
+<p>Hint: If you want to be absolutely sure that the man utility uses your file system instead of the default one, use this powerful script from DTrace Toolkit (open another terminal window, become root, run the following command and then in your first terminal window run '<kbd>man ls</kbd>'):</p>
+
+<pre>
+root@solaris:~# <kbd>/usr/dtrace/DTT/opensnoop -n man</kbd>
+. . .
+    0   2785 man            5 /rpool/mancopy/man1/ls.1 
+. . .
+</pre>
+
+<p>Now create a new file system on labpool and set it as a shadow of our mancopy. Before doing that, change <code>rpool/mancopy</code> to read-only. It's a requirement for shadow migration.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs set readonly=on rpool/mancopy</kbd>>
+root@solaris:~# <kbd>zfs create -o shadow=file:///rpool/mancopy labpool/shadowman</kbd>
+</pre>
+
+<p>Use the '<kbd>shadowstat</kbd>' command to watch the migration progress.</p>
+
+<pre>
+root@solaris:~# <kbd>shadowstat</kbd>
+					EST		
+				BYTES	BYTES		ELAPSED
+DATASET				XFRD	LEFT	ERRORS	TIME
+labpool/shadowman               18.8M	-	-	00:01:10
+
+^Croot@solaris:~#
+</pre>
+
+<p>And now, before the migration process has finished (we have a little bit over 100MB to copy), change <code>MANPATH</code> to the new file system and try '<kbd>man ls</kbd>' again. </p>
+
+<pre>
+root@solaris:~# <kbd>export MANPATH=/labpool/shadowman</kbd>
+root@solaris:~# <kbd>man ls</kbd>
+</pre>
+
+<p>Again, just to check if you are really accessing the new location, in another window run the '<kbd>opensnoop</kbd>' script. You may want to watch the process using '<kbd>shadowstat</kbd>' until you see '<code>No migrations in progress</code>'. </p>
+
+<p>Interesting to note that the new filesystem (labpool/shadowman) is not read-only, you can use it for reading and writing right after it was created.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs get readonly labpool/shadowman</kbd>
+NAME               PROPERTY  VALUE  SOURCE
+labpool/shadowman  readonly  off    default
+</pre>
+
+<p>You can read more about ZFS Shadow migration here:</br>
+http://www.oracle.com/technetwork/articles/servers-storage-admin/howto-migrate-s11-data-shadow-1866521.html</br>
+https://blogs.oracle.com/eschrock/entry/shadow_migration</br>
+https://blogs.oracle.com/eschrock/entry/shadow_migration_internals
+</p>
+
+<h2>ZFS Data Migration</h2>
+
+<p>Another way of migrating data with ZFS is <code>send/receive</code> operation. It is more flexible and it can be used for many different purposes; backup is one of the most popular. For this exercise we'll again use the copy of system manuals which is located in <code>rpool/mancopy</code>. Let's create a backup of this file system, then destroy it and then restore it from the backup. But first, we'll switch MANPATH to that directory and test if it works.</p>
+
+<pre>
+root@solaris:~# <kbd>export MANPATH=/rpool/mancopy</kbd>
+root@solaris:~# <kbd>man ls</kbd>
+Reformatting page.  Please Wait... done
+</pre>
+
+<p>Now copy the file system to labpool using send/receive operation. We can't copy a live filesystem so we should create a snapshot first:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs snap rpool/mancopy@snap1</kbd>
+<em>(Did you notice that now we can use alias 'snap' for 'snapshot'?)</em>
+root@solaris:~# <kbd>zfs send rpool/mancopy@snap1 | zfs recv labpool/manbackup</kbd>
+<em>(And yes, you can use 'recv' instead of 'receive')</em>
+</pre>
+
+<p>We just have backed up our man pages directory. Check if it's there.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs list -t all</kbd>
+NAME                             USED  AVAIL  REFER  MOUNTPOINT
+labpool                          316M   660M    33K  /labpool
+labpool/manbackup                142M   660M   142M  /labpool/manbackup
+labpool/manbackup@snap1             0      -   142M  -
+. . .
+</pre>
+
+
+<p>Notice that <code>send/receive</code> operation has created not only the file system, but also the snapshot that was in original file system! Now you may 'accidentally' destroy the file system.</p>
+
+<pre>
+root@solaris:~# <kbd>rm -rf /rpool/mancopy/*</kbd>
+root@solaris:~# <kbd>man ls</kbd>
+No manual entry for ls.
+
+</pre>
+
+<p>Oh, no! All the manuals are gone! But we have a backup! Let's move the data back.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs send labpool/manbackup@snap1 | zfs recv  rpool/mancopy</kbd>
+cannot receive new filesystem stream: destination 'rpool/mancopy' exists
+must specify -F to overwrite it
+</pre>
+
+<p>Of course! We have deleted just the files, but not the file system! Try to follow the advice in the error message:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs send labpool/manbackup@snap1 | zfs recv -F rpool/mancopy</kbd>
+cannot receive new filesystem stream: destination has snapshots (eg. rpool/mancopy@snap1)
+must destroy them to overwrite it
+</pre>
+
+<p>OK, now we understand that in order to receive a file system on this pool, it should not exist here. Let's destroy it and try again.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs destroy rpool/mancopy</kbd>
+cannot destroy 'rpool/mancopy': filesystem has children
+use '-r' to destroy the following datasets:
+rpool/mancopy@snap1
+root@solaris:~# <kbd>zfs destroy -r rpool/mancopy</kbd>
+root@solaris:~# <kbd>zfs send labpool/manbackup@snap1 | zfs recv  rpool/mancopy</kbd>
+</pre>
+
+<p>And now test if <code>man</code> command works:</p>
+
+<pre>
+root@solaris:~# <kbd>man ls</kbd>
+Reformatting page.  Please Wait... done
+</pre>
+
+<p>It works! Congratulations, we have restored all the data!</p>
+
+<p>ZFS send/receive works not only on the local system, but also can be used to send datasets to another host. Use it like this:
+</p>
+
+<pre>
+root@solaris:~# <kbd>zfs send rpool/mancopy@snap1 | ssh <otherhost> sudo zfs recv otherpool/manbackup</kbd>
+</pre>
+
+<p>Of course, you should have account and all necessary rights on the other host.</p>
+
+<p>You can read more about ZFS data migration here: http://docs.oracle.com/cd/E26502_01/html/E29007/gbchx.html</p>
+
+
+</body>
+</html>

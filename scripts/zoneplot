@@ -1,0 +1,66 @@
+#!/usr/bin/bash
+# This is a short script to monitor Solaris zone utilization in real time.
+# It uses gnuplot and a Perl script written by Thanassis Tsiodras and 
+# Andreas Bernauer. The Perl script can be downloaded from here:
+# http://www.lysium.de/sw/driveGnuPlotStreams.pl . I assume you have downloaded 
+# it and installed either in your PATH or in the directory from which you run
+# this script.
+#
+# Author: Pavel Anni
+# Date: January 22, 2011
+#
+# First check if the Perl script exists...
+plotscript="driveGnuPlotStreams.pl"
+plotscripturl="http://www.lysium.de/sw/driveGnuPlotStreams.pl"
+plotscriptpath=`which $plotscript`
+if [ "$?" -ne 0 ]
+then 
+  echo $PWD
+  if [ ! -e $PWD/$plotscript ]
+  then
+    echo "Can't find $plotscript. Please download it from $plotscripturl"
+    exit 1
+  else 
+    plotscriptpath="./$plotscript"
+  fi
+fi
+# ...and it's executable
+if test -x $plotscriptpath
+then 
+  plotscriptcmd=$plotscriptpath
+else
+  plotscriptcmd="/usr/bin/perl -w "$plotscriptpath
+fi
+
+# Here are the plot's parameters
+geometry="500x300+0+0"          # geometry
+nwin=1                          # number of windows
+plength=50                      # plot length in number of samples 
+minu=0                          # min utilization value is 0
+maxu=`psrinfo | wc -l`          # max utilization value is equal to number of processors
+
+period=5    	                # sample length in seconds
+
+nz=`zoneadm list | wc -l`       # how many zones are running
+rzones=( `zoneadm list` )       # list of zone names
+
+# We are going to plot everything in window 0, so we initialize a string with $nz zeros
+declare -a pwindows
+for ((i=0; i < $nz; i++))
+do
+	pwindows+=( "0" )
+done
+
+zonestat -p -P zones -r summary -S name $period | gawk -F: '{print $3,$4; fflush()}' | \
+{   while read zname util  
+            do
+	       for (( i=0; i< $nz; i++ )) 
+               do
+	    #     echo $i
+                 if [ "$zname" = "${rzones[$i]}" ]
+		 then
+		  printf "%s:%s\n" $i $util 
+                 fi
+	       done 
+   done 
+} | $plotscriptcmd $nz $nwin $plength $minu $maxu $geometry ${rzones[@]} ${pwindows[@]}

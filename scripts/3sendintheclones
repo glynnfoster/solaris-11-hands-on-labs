@@ -1,0 +1,116 @@
+#!/bin/bash
+ #####   ######    ##    #####   #    #  ######
+ #    #  #        #  #   #    #  ##  ##  #
+ #    #  #####   #    #  #    #  # ## #  #####
+ #####   #       ######  #    #  #    #  #
+ #   #   #       #    #  #    #  #    #  #
+ #    #  ######  #    #  #####   #    #  ######
+
+# There are a few variables you must change:
+#
+# FIRST_CLONE
+# LAST_CLONE
+# FIRST_DOMAIN
+#
+# You also need to have unconfigured FIRST_DOMAIN,
+# and created a snapshot of it called "unconfigured"
+
+# This script is for a Solaris 11 primary domain only...
+
+# Global variables
+
+# Services definitions
+PRIMARY_VDS="primary-vds0"
+VSW_SERVICE="primary-vsw0"
+
+# Variables from buildfirstldom script
+
+DATAPOOL="dpool"
+LDOM_VOLS=${DATAPOOL}/ldoms
+ROOT_DISK="disk0"
+ROOT_SNAP="unconfigured"
+BASE_DOMAIN_NAME="dom"
+FIRST_DOMAIN=${BASE_DOMAIN_NAME}01
+GUEST_CORES=1
+GUEST_MEM=32G
+VNET_NAME="vnet1"
+
+# Variables for this script
+# for i in `seq -w FIRST LAST ; do echo $i ; done (use "01, "09", etc)
+
+FIRST_CLONE=02
+LAST_CLONE=02
+
+build ()
+{
+    for i in `seq -w ${FIRST_CLONE} ${LAST_CLONE}` ; do
+        
+        THIS_DOMAIN=${BASE_DOMAIN_NAME}${i}
+
+        ldm add-domain ${THIS_DOMAIN}
+        ldm set-core ${GUEST_CORES} ${THIS_DOMAIN}
+        ldm set-memory ${GUEST_MEM} ${THIS_DOMAIN}
+        
+        # not sure if three is enough...
+        # ldm add-vnet alt-mac-addrs=auto,auto,auto ${VNET_NAME} ${VSW_SERVICE} ${FIRST_DOMAIN}
+
+        ldm add-vnet alt-mac-addrs=auto,auto,auto ${VNET_NAME} ${VSW_SERVICE} ${THIS_DOMAIN}
+        
+        echo "Creating ZFS filesystem for LDOM..."
+        zfs create ${LDOM_VOLS}/${THIS_DOMAIN}
+        echo "Creating clone of boot disk..."
+        zfs clone ${LDOM_VOLS}/${FIRST_DOMAIN}/${FIRST_DOMAIN}_${ROOT_DISK}@${ROOT_SNAP} \
+            ${LDOM_VOLS}/${THIS_DOMAIN}/${THIS_DOMAIN}_${ROOT_DISK}
+        echo "Wiring up disk image to disk service"
+        ldm add-vdsdev /dev/zvol/dsk/${LDOM_VOLS}/${THIS_DOMAIN}/${THIS_DOMAIN}_${ROOT_DISK} \
+            ${THIS_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS}
+        echo "Connecting disk image to LDOM"
+        ldm add-vdisk ${THIS_DOMAIN}_${ROOT_DISK} \
+            ${THIS_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS} \
+            ${THIS_DOMAIN}
+
+        #***** Might want to set this to "true" later...
+       
+        ldm set-var auto-boot\?=true ${THIS_DOMAIN}
+        ldm set-var boot-device=${THIS_DOMAIN}_${ROOT_DISK} ${THIS_DOMAIN}
+        ldm bind-domain ${THIS_DOMAIN}
+    done
+    
+    #echo "---------------------------------------------------------------------"
+    #echo "\n\n\nDomains:\n"
+    #ldm list-domain
+    #echo "---------------------------------------------------------------------"
+    #echo "\n\n\nBindings:-n"
+    #ldm list-bindings
+}
+
+destroy ()
+{
+    for i in `seq -w ${FIRST_CLONE} ${LAST_CLONE}` ; do
+        
+        THIS_DOMAIN=${BASE_DOMAIN_NAME}${i}
+        
+        ldm stop-domain ${THIS_DOMAIN}
+        ldm unbind-domain ${THIS_DOMAIN}
+        ldm remove-vdisk ${THIS_DOMAIN}_${ROOT_DISK} ${THIS_DOMAIN}
+        ldm remove-vdsdev ${THIS_DOMAIN}_${ROOT_DISK}@${PRIMARY_VDS}
+        zfs destroy -r ${LDOM_VOLS}/${THIS_DOMAIN}
+        ldm remove-vnet ${VNET_NAME} ${THIS_DOMAIN}
+        ldm remove-domain ${THIS_DOMAIN}
+    done
+}
+
+[ $# -eq 0 ] && { echo "Usage: $0 (check | build | destroy)"; exit 1; }
+
+if [ $1 = "check" ]; then
+    ldm list-domain ${FIRST_DOMAIN}
+    ldm list-bindings ${FIRST_DOMAIN}
+elif [ $1 = "build" ]; then
+    build; 
+elif [ $1 = "destroy" ]; then
+    destroy;
+else
+    echo "What are you trying to say? :-)";
+fi
+
+exit 0

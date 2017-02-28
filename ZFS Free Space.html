@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style type="text/css">
+body {
+	font-family: Verdana, Tahoma, Arial, Helvetica, sans-serif;
+	font-size: 0.875em;
+	line-height: 140%;
+	text-align: justify;
+	counter-reset: page;
+	counter-reset: section;
+}
+
+pre {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: normal;
+}
+
+kbd {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: bold;
+}
+
+code {
+	font-family: Lucidatypewriter, Courier, "Courier New", courier, monospace;
+	font-weight: normal;
+}
+
+p {
+	width: 50em;
+}
+</style>
+<meta charset="utf-8" />
+<title></title>
+</head>
+<body>
+<p>One day you have noticed that you don't have enough free space on your ZFS file system. Of course, you know how easy it is to expand your ZFS pool: just add more disks. But you don't have any extra disks available right now. It's time to use good old method: clean up some garbage. So you go and look for temporary files, downloaded ISO images, old logs and other stuff you stored "just temporarily" several months ago and forgot about it. You delete them all and check your free space again. But... nothing has changed here. You still have shortage of disk space. Why? </p>
+
+<p>The short answer is: snapshots. Remember you took several snapshots on your file system? Remember you were told that they don't occupy any disk space? Yes, that's true. UNTIL you start making changes to your file system.</p>
+
+<p>Let's perform an experiment. Create a file which will represent a disk device and then create a ZFS pool, which will automatically create and mount a new file system.</p>
+
+<pre>
+root@solaris:~# <kbd>mkfile 1g /var/tmp/disk1</kbd>
+root@solaris:~# <kbd>zpool create test1 /var/tmp/disk1</kbd>
+root@solaris:~# <kbd>zpool list</kbd>
+NAME    SIZE  ALLOC   FREE  CAP  DEDUP  HEALTH  ALTROOT
+rpool  15.6G  10.3G  5.33G  65%  1.00x  ONLINE  -
+test1  1016M   152K  1016M   0%  1.00x  ONLINE  -
+root@solaris:~# <kbd>zfs list test1</kbd>
+NAME   USED  AVAIL  REFER  MOUNTPOINT
+test1   85K   984M    31K  /test1
+</pre>
+
+<p>Now create a file in this file system and check available space.</p>
+
+<pre>
+root@solaris:~# <kbd>mkfile 100m /test1/file1</kbd>
+root@solaris:~# <kbd>zfs list test1</kbd>
+NAME   USED  AVAIL  REFER  MOUNTPOINT
+test1  100M   884M   100M  /test1
+</pre>
+
+<p>So far so good. Exactly 100 MB of space is taken by our file. Of course, if we delete this file right now, we get all the space back.</p>
+
+<pre>
+root@solaris:~# <kbd>rm /test1/file1</kbd>
+root@solaris:~# <kbd>zfs list test1</kbd>
+NAME   USED  AVAIL  REFER  MOUNTPOINT
+test1  265K   984M    31K  /test1
+</pre>
+
+<p>Create the file again and take a snapshot this time.</p>
+
+<pre>
+root@solaris:~# <kbd>mkfile 100m /test1/file1</kbd>
+root@solaris:~# <kbd>zfs list test1</kbd>
+NAME   USED  AVAIL  REFER  MOUNTPOINT
+test1  100M   884M   100M  /test1
+root@solaris:~# <kbd>zfs snapshot test1@snap1</kbd>
+</pre>
+
+<p>Check the sizes of both the file system and the snapshot:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs list -r -t all test1</kbd>
+NAME         USED  AVAIL  REFER  MOUNTPOINT
+test1        100M   884M   100M  /test1
+test1@snap1     0      -   100M  -
+</pre>
+
+<p>You see: the snapshot's size is exactly zero, as you were told already. Now delete the file and check the sizes again.</p>
+
+<pre>
+root@solaris:~# <kbd>rm /test1/file1</kbd>
+root@solaris:~# <kbd>ls /test1</kbd>
+root@solaris:~# <kbd>zfs list -r -t all test1</kbd>
+NAME         USED  AVAIL  REFER  MOUNTPOINT
+test1        100M   884M    31K  /test1
+test1@snap1  100M      -   100M  -
+</pre>
+
+<p>Now the snapshot takes exactly 100 Megabytes--the size of your deleted file! You don't see the file with '<code>ls(1)</code>' command, but it is still there, in the snapshot. File is successfully deleted, but your free space is still the same: 884 Megabytes. It's interesting to note that '<code>df(1M)</code>' command can produce confusing output in this case:</p>
+
+<pre>
+oot@solaris:~# <kbd>df -h /test1</kbd>
+Filesystem             Size   Used  Available Capacity  Mounted on
+test1                  984M    31K       884M     1%    /test1
+</pre>
+
+<p>From this output it's hard to figure out where 100 Megabytes have gone. So now you understand why it's recommended to use native <code>zfs(1M)</code> commands when working with ZFS file systems.</p>
+
+<p>It's all good, but we didn't answer the original question: how to get more free storage space when you need it? In most cases, your file systems will have snapshots, perhaps many of them. Deleting one or several snapshots can really help in getting more storage space. In our case:</p>
+
+<pre>
+root@solaris:~# <kbd>zfs destroy test1@snap1</kbd>
+root@solaris:~# <kbd>zfs list -r -t all test1</kbd>
+NAME   USED  AVAIL  REFER  MOUNTPOINT
+test1  110K   984M    31K  /test1
+</pre>
+
+<p>All free space is back! Congratulations!</p>
+
+</body>
+</html>

@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Automated Installer</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2015-10-05T17:33:33-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2015">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1>Oracle Solaris 11 Automated Installer Lab</h1>
+
+<p>In this lab we will learn how to use the new installation method introduced in Oracle Solaris 11: Automated Installer. We will review several typical situations and discuss how to solve them using Automated Installer (AI). This lab includes the following scenarios:</p>
+
+<ul>
+<li>Simple installation: one CPU architecture, one Solaris version, one set of packages;</li>
+<li>Several Solaris versions to be installed from one AI server;</li>
+<li>Different package configurations: small-server, large-server, additional packages;</li>
+<li>Different host configurations: hostnames, IP addresses, etc.;</li>
+<li>Zone installation from AI server;</li>
+<li>Installing from Unified Archives</li>
+</ul>
+
+<p>But before we start, 60 seconds of theory.</p>
+
+<h2>60 seconds of theory</h2>
+
+<p>Automated Installer has three major components: install services, manifests and system profiles. Here is what they do: </p>
+
+<ul>
+<li><b>Install Services:</b> they provide bootable media for clients and work in conjunction with IPS repositories. You need one install service per each CPU architecture and OS version.</li>
+<li><b>AI Manifests:</b> they describe installation configuration (disk layout etc.) and package sets. You need one manifest per each set of packages (small-server, large-server, additional packages) and disk layout. You can modify them dynamically at the time of installation. </li>
+<li><b>System Configuration (SC) Profiles:</b> they describe host OS configuration including hostname, network parameters, time zone, passwords etc. They are optional: if you don't have one, you'll have to specify all these parameters at first boot. </li>
+</ul>
+
+<p>Automated Installer works in conjunction with IPS repository, so we will need one for our exercises. Luckily, we have one installed in our lab. You instructor will give you all necessary information.</p>
+
+
+<h2>Simple Installation</h2>
+
+<p>Let's start with the simplest possible case: we have systems with only one CPU architecture, we want to install the same Solaris version and the same set of packages on every system. We have to install the AI package and create the first install service, which is going to be the default one.</p>
+
+<p>Start with checking if <code>installadm</code> is installed on the system:</p>
+
+<pre>
+root@solarislab:~# <kbd>pkg list -a installadm</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+install/installadm                                0.5.11-0.175.2.8.0.1.2     i--
+</pre>
+
+<p>Letter 'i' in the last column mean that it's installed. If it's not, just install it with '<kbd>pkg install install/installadm</kbd>'. Now let's check if we have any install services already (who knows, somebody might have configured them before us).</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm list</kbd>
+There are no services configured on this server.
+</pre>
+
+<p>So far, so good. We can create our first install service right now.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-service</kbd>
+OK to use subdir of /export/auto_install to store image? [y|N]: y
+  0% : Service svc:/network/dns/multicast:default is not online.  Installation services will not be advertised via multicast DNS.
+  0% : Creating service from: pkg:/install-image/solaris-auto-install
+  0% : Using publisher(s):
+  0% :     solaris: http://10.80.11.34:81/
+  5% : Refreshing Publisher(s)
+ 15% : Planning Phase
+ 24% : Download Phase
+ 62% : Actions Phase
+ 91% : Finalize Phase
+ 91% : Creating sparc service: solaris11_3-sparc
+ 91% : Image path: /export/auto_install/solaris11_3-sparc
+ 91% : Setting "solaris" publisher URL in default manifest to:
+ 91% :  http://10.80.11.34:81/
+ 91% : Creating default-sparc alias
+ 91% : Setting "solaris" publisher URL in default manifest to:
+ 91% :  http://10.80.11.34:81/
+100% : Created Service: 'solaris11_3-sparc'
+100% : Refreshing SMF service svc:/system/install/server:default
+100% : Enabling SMF service svc:/network/dhcp/server:ipv4
+100% : Warning: mDNS registry of service 'solaris11_3-sparc' could not be verified.
+100% : Warning: mDNS registry of service 'default-sparc' could not be verified.
+</pre>
+
+<p>Let's look more closely at the output. First of all, we have to confirm that we are OK with storing boot image in the default /export/auto_install directory (of course, you can change that if you want). Then, as soon as it's just our local lab exercise, we are not going to use multicast DNS to advertise it widely. Three lines after that tell us that we are going to use a special package that contains Solaris boot image and it's located on our local IPS repository. </p>
+
+<p>If you look further, you see that <code>installadm</code> creates a SPARC service and from its name we can guess that it's based on Oracle Solaris 11.3 version. Why? Because the last version we have in the repository is 11.3. You can check it:</p>
+
+<pre>
+root@solarislab:~# <kbd>pkg list -af entire | head</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.0.0.29.0    ---
+entire                                            0.5.11-0.175.3.0.0.28.0    ---
+entire                                            0.5.11-0.175.2.14.0.5.0    ---
+entire                                            0.5.11-0.175.2.13.0.6.0    ---
+entire                                            0.5.11-0.175.2.12.0.6.0    i--
+entire                                            0.5.11-0.175.2.12.0.5.0    ---
+entire                                            0.5.11-0.175.2.11.0.5.0    ---
+entire                                            0.5.11-0.175.2.10.0.5.0    ---
+entire                                            0.5.11-0.175.2.9.0.5.0     ---
+</pre>
+
+<p>You see: our current installed version is 11.2.12, but the latest available is 11.3.0.0.29. So <code>installadm</code> uses it by default. </p>
+
+<p>What else can we learn from the output? That <code>installadm</code> has also created a default manifest for this service and set the publisher in that manifest to our current publisher with local address 10.80.11.34. It also has enabled a DHCP service, but we don't need it for SPARC installation so we'd better disable it right now: </p>
+
+<pre>
+root@solarislab:~# <kbd>svcadm disable network/dhcp/server:ipv4</kbd>
+</pre>
+
+<p>Now the most interesting part: let's try to install a system from this AI server. To do that we have to get to the console of a client system. In our lab environment we have created several guest domains, but we didn't install Solaris in them. You instructor will give you all necessary information how to access your domain's console. Usually it's <kbd>telnet localhost 5000</kbd> (or other port number). When you get to OpenBoot 'ok' prompt enter the following <code>setenv</code> command. Make sure that everything that goes after '<code>network-boot-arguments</code>' doesn't have any spaces. Your instructor will provide you with the information about hostnames and IP addresses--they are in italic in the following command.</p>
+
+<pre>
+{0} ok <kbd>setenv network-boot-arguments hostname=<em>ai-client</em>,host-ip=<em>10.80.10.91</em>,router-ip=10.80.11.254,subnet-mask=255.255.254.0,file=http://10.80.11.34:5555/cgi-bin/wanboot-cgi</kbd>
+</pre>
+
+<p>After that enter the boot command and watch the installation process. We have skipped most of the output, but you are encouraged to read and try to interpret as much as possible. You instructor will help you in that.</p>
+
+<pre>
+{0} ok <kbd>boot net - install</kbd>
+network-boot-arguments =  hostname=ai-client,host-ip=10.80.10.92,router-ip=10.80.11.254,subnet-mask=255.255.254.0,file=http://10.80.11.34:5555/cgi-bin/wanboot-cgi
+NOTICE: Entering OpenBoot.
+NOTICE: Fetching Guest MD from HV.
+NOTICE: Starting additional cpus.
+NOTICE: Initializing LDC services.
+NOTICE: Probing PCI devices.
+NOTICE: Finished PCI probing.
+
+
+SPARC T4-2, No Keyboard
+Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+OpenBoot 4.36.1, 4.0000 GB memory available, Serial #83607872.
+Ethernet address 0:14:4f:fb:c1:40, Host ID: 84fbc140.
+
+
+
+Boot device: /virtual-devices@100/channel-devices@200/network@0  File and args: - install
+
+. . . . . . . .
+Wed Sep 16 21:19:40 wanboot info: miniroot: Download complete
+SunOS Release 5.11 Version 11.3 64-bit
+Copyright (c) 1983, 2015, Oracle and/or its affiliates. All rights reserved.
+Remounting root read/write
+Probing for device nodes ...
+Preparing network image for use
+Downloading solaris.zlib
+. . . . . . . . . . .
+Done mounting image
+Configuring devices.
+Hostname: ai-client
+Service discovery phase initiated
+Service name to look up: default-sparc
+Service discovery over multicast DNS failed
+Service default-sparc located at 10.80.11.34:5555 will be used
+Service discovery finished successfully
+Process of obtaining install manifest initiated
+Using the install manifest obtained via service discovery
+
+ai-client console login:
+Automated Installation started
+The progress of the Automated Installation will be output to the console
+Detailed logging is in the logfile at /system/volatile/install_log
+Press RETURN to get a login prompt at any time.
+
+21:22:41    Install Log: /system/volatile/install_log
+21:22:41    Using Derived Script: /system/volatile/ai.xml
+21:22:41    Using profile specification: /system/volatile/profile
+21:22:41    Using service list file: /var/run/service_list
+21:22:41    Starting installation.
+. . . . .
+21:33:19    91% update-filesystem-owner-group completed.
+21:33:19    92% transfer-ai-files completed.
+21:33:19    100% create-snapshot completed.
+21:33:19    100% None
+21:33:19    Automated Installation succeeded.
+21:33:20    You may wish to reboot the system at this time.
+Automated Installation finished successfully
+The system can be rebooted now
+Please refer to the /system/volatile/install_log file for details
+After reboot it will be located at /var/log/install/install_log
+
+</pre>
+
+<p>We skipped a lot of messages about the installation progress, but you may want to take a look at them--it'll give you a better understanding about the processes going on during installation. </p>
+
+<p>Well, now we can reboot the system to see what was installed. For the AI boot image login is 'root', password is 'solaris'. </p>
+
+<pre>
+ai-client console login:
+ai-client console login: <kbd>root</kbd>
+Password: <kbd>solaris</kbd>
+Sep 16 21:40:07 ai-client login: ROOT LOGIN /dev/console
+Oracle Corporation      SunOS 5.11      11.3    August 2015
+root@ai-client:~# reboot
+Sep 16 21:40:11 ai-client reboot: initiated by root on /dev/console
+. . . . . .
+</pre>
+
+<p>After several familiar messages you will come to the System Configuration screen. From here you define the hostname, network parameters such as IP address, router IP, etc., time zone, root and user passwords and others. Pretty standard procedure, so go ahead and enter the following:</p>
+
+<pre>
+Computer name: <kbd>ai-client</kbd>
+Network configuration: <kbd>Manually</kbd>
+IP address: <em>(provided by the instructor)</em>
+Netmask: <kbd>255.255.254.0</kbd>
+Router: <kbd>10.80.11.254</kbd>
+Do not configure DNS
+Alternate Name Service: None
+Time Zone: Americas -> United States -> your time zone
+Language: your preferred language 
+Territory: your territory
+Date and Time: accept the default by pressing F2
+Keyboard: your preferred keyboard
+Root password: <kbd>solaris1</kbd>
+Your real name: <kbd>Lab User</kbd>
+Username: <kbd>lab</kbd>
+User password: <kbd>oracle1</kbd>
+</pre>
+
+<p>On the final screens just press F2 to continue.</p>
+
+<p>After a while you will see the login prompt. Use <code>lab/oracle1</code> to login:</p>
+
+<pre>
+ai-client console login:
+ai-client console login: <kbd>lab</kbd>
+Password: <kbd>oracle1</kbd>
+Oracle Corporation      SunOS 5.11      11.3    August 2015
+lab@ai-client:~$
+</pre>
+
+<p>So, what have we just installed?</p>
+
+<pre>
+lab@ai-client:~$ <kbd>uname -a</kbd>
+SunOS ai-client 5.11 11.3 sun4v sparc sun4v
+lab@ai-client:~$ <kbd>pkg list entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.0.0.29.0    i--
+lab@ai-client:~$ <kbd>pkg list | wc</kbd>
+     581    1744   47084
+lab@ai-client:~$ <kbd>pkg list | grep group</kbd>
+group/system/management/rad/rad-server-interfaces 0.5.11-0.175.3.0.0.29.1    i--
+group/system/solaris-core-platform                0.5.11-0.175.3.0.0.29.1    i--
+group/system/solaris-large-server                 0.5.11-0.175.3.0.0.29.0    i--
+</pre>
+
+<p>Congratulations, we have just created an install server and installed our first client from it. We used the simplest possible configuration: by default we installed the latest available release of Solaris in you repository, default manifest specifies that we install 'solaris-large-server' group and also we used interactive System Configuration tool to provide hostname, IP address, etc. Of course, all that can be tuned to your particular situation. And this is what we are going to do in the rest of this lab.</p>
+
+<h2>Another version of Oracle Solaris</h2>
+
+<p>Of course, there are situations when you want to install a different version of Oracle Solaris. For instance, in our lab repository we have versions 11 Express, 11.0, 11.1, 11.2 with their support SRUs. How can we specify a different version for installation? </p>
+
+<p>In this case we have to create a separate install service. So, the more different versions and CPU architectures you want to install, the more install services you have. Let's figure out what's available. We list 10 most recent updates here:</p>
+
+<pre>
+root@solarislab:~# <kbd>pkg list -avf  install-image/solaris-auto-install | head</kbd>     FMRI                                                                         IFO
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.3.0.0.29.1:20150817T163032Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.3.0.0.28.0:20150803T161232Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.14.0.5.0:20150910T165659Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.13.0.6.0:20150810T175313Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.12.0.6.0:20150715T155314Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.12.0.5.0:20150701T004857Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.11.0.5.0:20150610T201614Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.10.0.5.0:20150506T023353Z ---
+pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.9.0.5.0:20150404T222307Z ---
+
+
+</pre>
+
+<p>Here we use '-v' option here to print full FMRIs (Fault Managed Resource Indicator) for packages: we will need it later. </p>
+
+<p>Well, we already have created an install service for Solaris 11.3, now let's create another one for Solaris 11.2, SRU 11, for example.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-service -s pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.11.0.5.0</kbd>
+OK to use subdir of /export/auto_install to store image? [y|N]: y
+  0% : Service svc:/network/dns/multicast:default is not online.  Installation services will not be advertised via multicast DNS.
+  0% : Creating service from: pkg://solaris/install-image/solaris-auto-install@5.11,5.11-0.175.2.11.0.5.0
+  0% : Using publisher(s):
+  0% :     solaris: http://10.80.11.34:81/
+  5% : Refreshing Publisher(s)
+ 15% : Planning Phase
+ 24% : Download Phase
+ 62% : Actions Phase
+ 91% : Finalize Phase
+ 91% : Creating sparc service: solaris11_2_11_5_0-sparc
+ 91% : Image path: /export/auto_install/solaris11_2_11_5_0-sparc
+ 91% : Setting "solaris" publisher URL in default manifest to:
+ 91% :  http://10.80.11.34:81/
+100% : Created Service: 'solaris11_2_11_5_0-sparc'
+100% : Refreshing SMF service svc:/system/install/server:default
+100% : Warning: mDNS registry of service 'solaris11_2_11_5_0-sparc' could not be verified.
+
+</pre>
+
+<p>OK, done. Now let's make it the default SPARC service.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm delete-service -n default-sparc</kbd>
+WARNING: The service you are deleting, or a dependent alias, is the
+alias for the default sparc service. Without the 'default-sparc'
+service, sparc clients will fail to boot unless explicitly assigned to
+a service using the create-client subcommand.
+Are you sure you want to delete this alias? [y|N]: y
+Warning: mDNS registry of service default-sparc could not be verified.
+Deleted Service: 'default-sparc'
+root@solarislab:~# <kbd>installadm create-service -t solaris11_2_11_5_0-sparc -n default-sparc</kbd>
+  0% : Service svc:/network/dns/multicast:default is not online.  Installation services will not be advertised via multicast DNS.
+  0% : Creating sparc alias: default-sparc
+  0% : Setting "solaris" publisher URL in default manifest to:
+  0% :  http://10.80.11.34:81/
+100% : Created Service: 'default-sparc'
+100% : Refreshing SMF service svc:/system/install/server:default
+100% : Enabling SMF service svc:/network/dhcp/server:ipv4
+100% : Warning: mDNS registry of service 'default-sparc' could not be verified.
+root@solarislab:~# <kbd>svcadm disable dhcp/server:ipv4</kbd>
+</pre>
+
+<p>And now you can try to install the same client again to check if this service installs the version we have created it with, namely, Solaris 11.2.11. </p>
+
+<p><strong>Spoiler Alert: </strong>We can already tell you what is going to happen during this test install. If you want to learn it yourself, go ahead and install the 'ai-client' LDom again using the instructions above and then check what Solaris version was installed with '<code>pkg list entire</code>'. For those of you who want to save time and skip this test installation step, here is what's going to happen:</p>
+
+<p>The client system will boot from the install image, which is 11.2.11, but it will install the latest available Solaris SRU, which is 11.2.14 in our default repository. Why so? Because it uses the default manifest and by default it installs the latest SRU available. If we want to install that particular SRU, we have to create a new manifest. It's time to learn about AI manifests.  </p>
+
+<p>First, let's see what we've got already:</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm list -m</kbd>
+Service Name             Manifest Name Type    Status  Criteria
+------------             ------------- ----    ------  --------
+default-sparc            orig_default  derived default none
+solaris11_2_11_5_0-sparc orig_default  derived default none
+solaris11_3-sparc        orig_default  derived default none
+</pre>
+
+<p>Note that we have two services (one per each Solaris update version) plus one alias. Each service has one default manifest. Our plan is to modify the default manifest and add it to the default service. First, we copy the manifest XML file from its default location to the home directory (actually, it can be any directory). </p>
+
+
+<pre>
+root@solarislab:~# <kbd>cp /usr/share/auto_install/manifest/default.xml s11.2.11-manifest.xml</kbd>
+</pre>
+
+<p>Now we can edit this copy. So we want to specify which SRU we are going to install. Let's list what's available. </p>
+
+
+<pre>
+root@solarislab:~# <kbd>pkg list -af entire | head</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.0.0.29.0    ---
+entire                                            0.5.11-0.175.3.0.0.28.0    ---
+entire                                            0.5.11-0.175.2.14.0.5.0    ---
+entire                                            0.5.11-0.175.2.13.0.6.0    ---
+entire                                            0.5.11-0.175.2.12.0.6.0    i--
+entire                                            0.5.11-0.175.2.12.0.5.0    ---
+entire                                            0.5.11-0.175.2.11.0.5.0    ---
+entire                                            0.5.11-0.175.2.10.0.5.0    ---
+entire                                            0.5.11-0.175.2.9.0.5.0     ---
+</pre>
+
+<p>Suppose we decided to install version 11.2.11. Take a note of the version string: '0.5.11-0.175.2.11.0.5.0' -- you will need it when editing the manifest. Now start your favorite text editor and open the manifest file: </p>
+
+
+<pre>
+root@solarislab:~# <kbd>vi s11.2.11-manifest.xml</kbd>
+</pre>
+
+<p>Scroll to almost the end of the file and find the following lines:</p>
+
+<pre>
+        For instance, to specify a particular build of S11.2, the
+        following should be used:
+
+            &lt;name&gt;pkg:/entire@0.5.11,5.11-0.175.2.0.0.build&lt;/name&gt;
+      --&gt;
+      &lt;software_data action=&quot;install&quot;&gt;
+        &lt;name&gt;pkg:/entire@0.5.11-0.175.2&lt;/name&gt;
+        &lt;name&gt;pkg:/group/system/solaris-large-server&lt;/name&gt;
+      &lt;/software_data&gt;
+</pre>
+
+<p>Change them to tell AI server that you want that specific SRU of Solaris. Also we can change the default 'solaris-large-server' group to 'solaris-small-server' one. After editing it should look like this (changes are in <strong>bold</strong>):</p>
+
+<pre>
+        For instance, to specify a particular build of S11.2, the
+        following should be used:
+
+            &lt;name&gt;pkg:/entire@0.5.11,5.11-0.175.2.0.0.build&lt;/name&gt;
+      --&gt;
+      &lt;software_data action=&quot;install&quot;&gt;
+        &lt;name&gt;pkg:/entire@0.5.11-0.175.2<strong>.11.0.5.0</strong>&lt;/name&gt;
+        &lt;name&gt;pkg:/group/system/solaris-<strong>small</strong>-server&lt;/name&gt;
+      &lt;/software_data&gt;
+</pre>
+
+<p>Now we have to install this manifest in the default SPARC service.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-manifest -n default-sparc -m s11.2.11 -f ./s11.2.11-manifest.xml</kbd>
+Created Manifest: 's11.2.11'
+root@solarislab:~# <kbd>installadm list -m</kbd>
+Service Name             Manifest Name Type    Status   Criteria
+------------             ------------- ----    ------   --------
+default-sparc            orig_default  derived default  none
+                         s11.2.11      derived inactive none
+solaris11_2_11_5_0-sparc orig_default  derived default  none
+solaris11_3-sparc        orig_default  derived default  none
+</pre>
+
+<p>OK, we have amended the manifest and installed it onto the server, but how can we use it? How can we let the install server know that which manifest to use? Well, we can specify a set of criteria to decide which manifest to apply. We can include IP address, hostname, MAC address in this criteria and the install server will use certain manifests for different clients. If the client doesn't fit any criteria, then the default manifest is applied. Let's define such criteria for our client. </p>
+
+<p>If you remember, before booting the client from OpenBoot prompt we assigned several boot parameters to it: IP address, hostname, wanboot script location, etc. So now we can use, for example, its hostname '<code>ai-client</code>' as a criteria.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm set-criteria -n default-sparc -m s11.2.11 -c hostname=ai-client</kbd>
+Changed Manifest: 's11.2.11'
+root@solarislab:~# <kbd>installadm list -m</kbd>
+Service Name             Manifest Name Type    Status  Criteria
+------------             ------------- ----    ------  --------
+default-sparc            s11.2.11      derived active  hostname = ai-client
+                         orig_default  derived default none
+solaris11_2_11_5_0-sparc orig_default  derived default none
+solaris11_3-sparc        orig_default  derived default none
+</pre>
+
+<p>And now we can try to install the client. Login to the console with '<code>telnet localhost 5000</code>' (using the port number provided by your instructor) and repeat the installation process described above.</p>
+
+<p>After you passed all the installation and configuration steps, login into the client and check it's version: </p>
+
+<pre>
+root@ai-client:~# <kbd>pkg list entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.2.11.0.5.0    i--
+</pre>
+
+
+<p>Success! Let's explain what we have observed here. </p>
+<ol>
+	<li>By default install service is always created from the latest available version of Solaris</li>
+	<li>For each Solaris Update (i.e. 11.1, 11.2, 11.3) we need a separate install service</li>
+	<li>By default install service installs the latest available SRU for the Solaris Update this service is created for (in our case the service created from Solaris 11.2.11 will install 11.2.14 unless we specify otherwise)</li>
+	<li>To specify a particular SRU which you want to install you have to edit and install AI manifest into the install service</li>
+</ol>
+
+<p>Now we will learn how to customize installation process even further. We start with adding other software packages. </p>
+
+
+<h2>Different package configurations</h2>
+
+<p>Most likely you want not just plain vanilla 'small-server' Solaris installation, but you are interested in some additional packages that can be installed. Instead of installing them manually or via custom scripts, why don't we specify them in the manifest? As you might have guessed already, if we can specify the version of 'entire' package in the 'software_data" part of the manifest, we can add more packages the same way, by using their FMRI names. Let's imagine we want to add a new management platform Puppet which was added recently to Oracle Solaris 11.2. If Puppet is installed from the beginning in the system, it can make system management much easier. But that's a topic for another hands-on lab :-). </p>
+
+<p>First, we have to find Puppet package we want to install.  </p>
+
+<pre>
+root@solarislab:~# <kbd>pkg list -av '*puppet*'</kbd>
+FMRI                                                                         IFO
+pkg://solaris/system/management/puppet@3.6.2,5.11-0.175.2.5.0.2.0:20141114T212642Z ---
+pkg://solaris/system/management/puppet-19@3.6.2,5.11-0.175.2.5.0.2.0:20141114T212630Z ---
+</pre>
+
+<p>Copy the first package's FMRI until the '@' sign into the clipboard or into the Notepad. Open the manifest file and edit it. After the line with 'solaris-small-server' FMRI insert the line with Puppet's FMRI (shown in <kbd>bold</kbd>).</p>
+
+<pre>
+      &lt;software_data action=&quot;install&quot;&gt;
+        &lt;name&gt;pkg:/entire@0.5.11-0.175.2.11.0.5.0&lt;/name&gt;
+        &lt;name&gt;pkg:/group/system/solaris-small-server&lt;/name&gt;
+        <kbd>&lt;name&gt;pkg://solaris/system/management/puppet&lt;/name&gt;</kbd>
+      &lt;/software_data&gt;
+</pre>
+
+<p>Don't forget to update the manifest after changing the XML file!</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm update-manifest -n default-sparc -m s11.2.11 -f ./s11.2.11-manifest.xml</kbd>
+Changed Manifest: 's11.2.11'
+</pre>
+
+<p>The rest is easy. Get back to OpenBoot prompt on the client (use '<kbd>init 0</kbd>' for that) and install it again (with '<kbd>boot net - install</kbd>'). After configuring the system (hostname, IP, time zone, etc.) login via console and check if you have installed the right version of Solaris and the Puppet package.</p>
+
+<pre>
+ai-client console login: <kbd>root</kbd>
+Password: <kbd>solaris1</kbd>
+Sep 22 17:43:17 ai-client login: ROOT LOGIN /dev/console
+Oracle Corporation      SunOS 5.11      11.2    May 2015
+root@ai-client:~# <kbd>pkg list entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.2.11.0.5.0    i--
+root@ai-client:~# <kbd>pkg list '*puppet*'</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+system/management/puppet                          3.6.2-0.175.2.5.0.2.0      i--
+system/management/puppet-19                       3.6.2-0.175.2.5.0.2.0      i--
+</pre>
+
+<p>Success! Let's summarize what we have learned in this exercise:</p>
+
+<ol>
+	<li>AI manifest controls what software is going to be installed on the client. You can add packages that are available from your IPS repository.</li>
+	<li>Don't forget to update the manifest in the install service after you have edited the XML file.</li>
+	<li>You can specify which clients should use each particular manifest by creating criteria based on hostname, IP address, MAC address, etc. IMPORTANT: in this criteria AI uses the hostname and IP address that were set in <code>network-boot-parameters</code> by OpenBoot, not the hostname/IP you <em>intend</em> to use after installation. Usually they are the same, but could be different.</li>
+</ol>
+
+<h2>System Configuration Profiles</h2>
+
+<p>Are you tired already of typing in hostname, IP address, root and user passwords every time you do a system installation? I am! We can solve this problem by using System Configuration Profiles. We can specify all those parameters in another XML file (or several files) and use them during AI installation. This way the system will be usable right after installation and we won't have that interactive stage at the first boot.</p>
+
+<p>We start with a simple profile and use the same configuration parameters that we used during interactive configuration. </p>
+
+<pre>
+root@solarislab:~# <kbd>sysconfig create-profile -o ai-client</kbd>
+</pre>
+
+<p>You will see the familiar configuration screens. Use the same parameters (hostname, IP address, router address, user and root passwords, etc.) that you used before. After you are finished with the tool, you'll see the following message: </p>
+
+<pre>
+SC profile successfully generated as:
+./ai-client/sc_profile.xml
+
+Exiting System Configuration Tool. Log is available at:
+/system/volatile/sysconfig/sysconfig.log.26544
+</pre>
+
+<p>You see that the tool has created a directory named 'ai-client' and placed the 'sc_profile.xml' file there. We will need this location in the next command. You can take a look at the resulting XML file to see its structure and content. Most of things in it are self-explanatory. Now we have to add this profile to the install service and specify again the criteria when it should be used. Here is the command for that:</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-profile -n default-sparc -p ai-client -c hostname=ai-client -f ./ai-client/sc_profile.xml</kbd>
+Created Profile: 'ai-client'
+root@solarislab:~# <kbd>installadm list -p</kbd>
+Service Name  Profile Name Environment Criteria
+------------  ------------ ----------- --------
+default-sparc ai-client    system      hostname = ai-client
+</pre>
+
+<p>Now try to install again our client (<kbd>init 0; boot net - install</kbd>). You will see that the installation will run the same way, but after reboot you won't get the configuration screen. You system will get its hostname and network parameters automatically and you'll see the console prompt: '<code>ai-client console login: </code>'. That means your system was installed completely without intervention from your side.</p>
+
+<p>Now you can say: "Well, should I create a separate profile for each and every system I want to install? They all have different IPs and hostnames!". You are right--all system have different identities. Oracle Solaris engineers know about that and they feel your pain. So they created a system of templates that you can use to avoid creating thousands of separate profiles. Let's learn about them.</p>
+
+<p>Take a look at the following file: </p>
+
+<pre>
+root@solarislab:~# <kbd>cat /usr/share/auto_install/sc_profiles/template_var</kbd>
+#
+# Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+#
+#
+# This file provides a list of supported profile template variables and
+# sample values for current version of Solaris.
+#
+AI_ARCH=i86pc
+AI_CPU=i386
+AI_HOSTNAME=solaris
+AI_IPV4=192.168.56.2
+AI_IPV4_PREFIXLEN=24
+AI_MAC=01:01:01:01:01:01
+AI_MEM=2048
+AI_NETWORK=10.0.0.0
+AI_NETLINK_DEVICE=e1000g0
+AI_NETLINK_VANITY=net0
+AI_ROUTER=10.0.0.1
+AI_SERVICE=default-i386
+AI_ZONENAME=testzone
+</pre>
+
+<p>These are the variables that you can use in system configuration profiles: IP address, hostname and others. It's very important to notice that those are system parameters <em>at the time it boots with the AI image</em>. In case of SPARC systems those parameters as set in OpenBoot with <code>setenv network-boot-parameters</code> command. Usually (but not necessarily) those are parameters you want to see in your system after installation. That's why we can use them in SC profiles and get what we expected. </p>
+
+<p>Let's copy the SC profile XML file that we just created with the interactive tool and edit it. </p>
+
+
+<pre>
+root@solarislab:~# <kbd>cp ai-client/sc_profile.xml ./sc_template.xml</kbd>
+root@solarislab:~# <kbd>vi ./sc_template.xml</kbd>
+</pre>
+
+<p>Instead of giving you step by step instructions on what to change, it seems to be easier to provide you with the output of <code>diff(1)</code> command. It's pretty easy to figure out the changes that were made.</p>
+
+<pre>
+root@solarislab:~# <kbd>diff ai-client/sc_profile.xml sc_template.xml</kbd>
+8c8
+&lt;         &lt;propval type=&quot;astring&quot; name=&quot;nodename&quot; value=&quot;ai-client&quot;/&gt;
+---
+&gt;         &lt;propval type=&quot;astring&quot; name=&quot;nodename&quot; value=&quot;{{AI_HOSTNAME}}&quot;/&gt;
+21c21
+&lt;         &lt;propval type=&quot;net_address_v4&quot; name=&quot;static_address&quot; value=&quot;10.80.10.92/23&quot;/&gt;
+---
+&gt;         &lt;propval type=&quot;net_address_v4&quot; name=&quot;static_address&quot; value=&quot;{{AI_IPV4}}/{{AI_IPV4_PREFIXLEN}}&quot;/&gt;
+24c24
+&lt;         &lt;propval type=&quot;net_address_v4&quot; name=&quot;default_route&quot; value=&quot;10.80.11.254&quot;/&gt;
+---
+&gt;         &lt;propval type=&quot;net_address_v4&quot; name=&quot;default_route&quot; value=&quot;{{AI_ROUTER}}&quot;/&gt;
+</pre>
+
+<p>After you are done with editing, install this profile in the install service and remove the old one. Note that this time we don't specify any criteria, which means that this profile will be applied to all clients.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-profile -n default-sparc -p sc-template  -f ./sc_template.xml</kbd>
+Created Profile: 'sc-template'
+root@solarislab:~# <kbd>installadm list -p</kbd>
+Service Name  Profile Name Environment Criteria
+------------  ------------ ----------- --------
+default-sparc ai-client    system      hostname = ai-client
+              sc-template  system      none
+root@solarislab:~# <kbd>installadm delete-profile -n default-sparc -p ai-client</kbd>
+Deleted Profile: 'ai-client'
+root@solarislab:~# <kbd>installadm list -p</kbd>
+Service Name  Profile Name Environment Criteria
+------------  ------------ ----------- --------
+default-sparc sc-template  system      none
+</pre>
+
+<p>And now it's time to test this profile. First, try to install your client system with the current settings. If it works OK, then change the settings with 'setenv network-boot-parameters' to a different hostname and IP and test again. Here is the example. Your instructor will give you the necessary information about available IP addresses (please, don't "invent" them yourself, we have very strict rules in the laboratory!). </p>
+
+<pre>
+{0} ok <kbd>printenv network-boot-arguments</kbd>
+network-boot-arguments =  hostname=ai-client,host-ip=10.80.10.92,router-ip=10.80.11.254,subnet-mask=255.255.254.0,file=http://10.80.11.34:5555/cgi-bin/wanboot-cgi
+{0} <kbd>ok setenv network-boot-arguments hostname=ai-client1,host-ip=10.80.10.91,router-ip=10.80.11.254,subnet-mask=255.255.254.0,file=http://10.80.11.34:5555/cgi-bin/wanboot-cgi
+network-boot-arguments =  hostname=ai-client1,host-ip=10.80.10.91,router-ip=10.80.11.254,subnet-mask=255.255.254.0,file=http://10.80.11.34:5555/cgi-bin/wanboot-cgi</kbd>
+{0} ok
+</pre>
+
+<p>After the installation reboot the system and check if it set the parameters you expected.</p>
+
+<pre>
+ai-client1 console login: lab
+Password:
+Oracle Corporation      SunOS 5.11      11.2    August 2015
+lab@ai-client1:~$ ipadm
+NAME              CLASS/TYPE STATE        UNDER      ADDR
+lo0               loopback   ok           --         --
+   lo0/v4         static     ok           --         127.0.0.1/8
+   lo0/v6         static     ok           --         ::1/128
+net0              ip         ok           --         --
+   net0/v4        static     ok           --         10.80.10.91/23
+   net0/v6        addrconf   ok           --         fe80::214:4fff:fef8:5f6/10
+   net0/v6        addrconf   ok           --         2606:b400:410:831:214:4fff:fef8:5f6/64
+</pre>
+
+<p>Success! Again, let's summarize what we have learned in this exercise.</p>
+
+<ol>
+	<li>System parameters which we usually set at the first boot, can be configured and set via System Configuration Profiles (SC profiles). </li>
+	<li>SC profiles can be created using interactive SC tool (<code>sysconfig(1M)</code>) or by copying and editing XML files.</li>
+	<li>You can use variables in profiles to install systems with different hostnames, IP addresses, etc.</li>
+</ol>
+
+<h2>Zone installation with Automated Installer</h2>
+
+<p>In the beginning of this lab we also mentioned that it's possible to install zones together with the host installation. It's time to learn how to do that. </p>
+
+<p>First of all, we have to configure the zone we are going to install. Let's create the simplest possible configuration with <code>zonecfg(1M)</code>. </p>
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z ai-zone create</kbd>
+</pre>
+
+<p>This command creates a non-global zone with all default parameters. Now we have to export this configuration into a file:</p>
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z ai-zone export -f ai-zone.cfg</kbd>
+</pre>
+
+<p>Take a look at the resulting file:</p>
+
+<pre>
+root@solarislab:~# <kbd>cat ai-zone.cfg</kbd>
+create -b
+set brand=solaris
+set zonepath=/system/zones/%{zonename}
+set autoboot=false
+set autoshutdown=shutdown
+set ip-type=exclusive
+add anet
+set linkname=net0
+set lower-link=auto
+set configure-allowed-address=true
+set link-protection=mac-nospoof
+set mac-address=auto
+end
+</pre>
+
+<p>Now we have to make it visible from the client we are about to install. The best way to do it is to place it on a web server inside the local network. Luckily, we have a running web server as part of the AI server installation. We just have to configure the directory where to store files on this web server. Let's use svccfg(1M) for that: </p>
+
+<pre>
+root@solarislab:~# <kbd>svccfg -s svc:/system/install/server:default listprop</kbd>
+<em>(that means the directory is not configured yet)</em>
+root@solarislab:~# <kbd>mkdir /var/ai/ai-files</kbd>
+root@solarislab:~# <kbd>chown -R webservd:webservd /var/ai/ai-files/</kbd>
+root@solarislab:~# <kbd>svccfg -s svc:/system/install/server:default setprop all_services/webserver_files_dir=/var/ai/ai-files</kbd>
+root@solarislab:~# <kbd>svccfg -s svc:/system/install/server:default listprop  all_services/webserver_files_dir</kbd>
+all_services/webserver_files_dir astring     /var/ai/ai-files
+root@solarislab:~# <kbd>svcadm refresh svc:/system/install/server:default</kbd>
+</pre>
+
+<p>Well, now copy the zone configuration file to this place:</p>
+
+<pre>
+root@solarislab:~# <kbd>cp ai-zone.cfg /var/ai/ai-files</kbd>
+</pre>
+
+<p>Now, which file should we use to tell AI server to install the zone? What would be your guess? Of course, it's the manifest file! Everything that has to be <em>installed</em> is configured in the manifest! We will use the same XML file where we configured the Solaris version.</p>
+
+<pre>
+root@solarislab:~# <kbd>vi s11.2.11-manifest.xml</kbd>
+</pre>
+
+<p>Scroll down to the end. Insert the following line (marked bold) after the 'software' tag: </p>
+
+<pre>
+      &lt;software_data action=&quot;install&quot;&gt;
+        &lt;name&gt;pkg:/entire@0.5.11-0.175.2.11.0.5.0&lt;/name&gt;
+        &lt;name&gt;pkg:/group/system/solaris-small-server&lt;/name&gt;
+        &lt;name&gt;pkg://solaris/system/management/puppet&lt;/name&gt;
+      &lt;/software_data&gt;
+    &lt;/software&gt;
+<kbd>    &lt;configuration type=&quot;zone&quot; name=&quot;ai-zone&quot; source=&quot;http://10.80.11.34:5555/files/ai-zone.cfg&quot;/&gt;</kbd>
+  &lt;/ai_instance&gt;
+&lt;/auto_install&gt;
+</pre>
+
+<p>And, of course, after editing the XML file, don't forget to update the manifest:</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm update-manifest -n default-sparc -m s11.2.11 -f ./s11.2.11-manifest.xml</kbd>
+</pre>
+
+<p>Now everything is ready. Once again login into the client domain and perform the familiar procedure: halt the system (<kbd>init 0</kbd>) to get to OpenBoot '<code>ok</code>' prompt, boot it from AI server (<kbd>boot net - install</kbd>). Watch the messages on the screen. At some point you'll see the following lines:</p>
+
+
+<pre>
+21:40:43    Zone name: ai-zone
+21:40:43       source: http://10.80.11.34:5555/files/ai-zone.cfg
+</pre>
+
+<p>That means everything is good. Wait until the installation finishes, reboot and login into the client system. First, let's check if the zone is installed:</p>
+
+<pre>
+root@ai-client1:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+</pre>
+
+<p>Hmm... Nothing. Where is our zone? We were told it's going to be installed at the first boot! Let's investigate further. Check the status of the following service (it's responsible for zone installation):</p>
+
+<pre>
+root@ai-client1:~# <kbd>svcs zones-install</kbd>
+STATE          STIME    FMRI
+offline*       17:52:37 svc:/system/zones-install:default
+root@ai-client1:~# <kbd>svcs -x</kbd>
+svc:/system/zones-install:default (Zones auto-install)
+ State: offline* transitioning to online since September 24, 2015 05:52:37 PM EDT
+Reason: Start method is running.
+   See: http://support.oracle.com/msg/SMF-8000-C4
+   See: /var/svc/log/system-zones-install:default.log
+Impact: This service is not running.
+</pre>
+
+<p>Well, it's not running, but it's "transitioning to online". That's a good sign. Also we can take a look at its log file:</p>
+
+
+<pre>
+root@ai-client1:~# <kbd>tail  /var/svc/log/system-zones-install:default.log</kbd>
+zoneadm: ai-zone: No such zone configured
+zoneadm: ai-zone: No such zone configured
+Configuring zone ai-zone
+Installing zone ai-zone
+zoneadm -z ai-zone install  -m /usr/share/auto_install/manifest/zone_default.xml                             -c /usr/share/auto_install/sc_profiles/enable_sci.xml
+The following ZFS file system(s) have been created:
+    rpool/VARSHARE/zones/ai-zone
+Progress being logged to /var/log/zones/zoneadm.20150924T215408Z.ai-zone.install
+       Image: Preparing at /system/zones/ai-zone/root.
+</pre>
+
+<p>A-ha! Something is going on! It looks like our zone is being installed right now. Check the default <code>zonepath</code> location:</p>       
+       
+       
+<pre>      
+root@ai-client1:~# ls /system/zones
+ai-zone
+</pre>
+
+<p>Indeed! The file system for the zone is created already. Check the log and the service again:</p>
+
+<pre>
+root@ai-client1:~# <kbd>tail  /var/svc/log/system-zones-install:default.log</kbd>
+         Startup: Refreshing catalog 'solaris' ... Done
+        Planning: Solver setup ... Done
+        Planning: Running solver ... Done
+        Planning: Finding local manifests ... Done
+        Planning: Fetching manifests:   0/280  0% complete
+        Planning: Fetching manifests: 280/280  100% complete
+        Planning: Package planning ... Done
+        Planning: Merging actions ... Done
+        Planning: Checking for conflicting actions ... Done
+root@ai-client1:~# <kbd>tail  /var/svc/log/system-zones-install:default.log</kbd>
+        Download:  4644/53146 items   32.9/374.3MB  8% complete (2.4M/s)
+        Download:  6193/53146 items   58.5/374.3MB  15% complete (3.7M/s)
+        Download:  7479/53146 items   94.5/374.3MB  25% complete (6.1M/s)
+        Download:  9006/53146 items  111.6/374.3MB  29% complete (5.4M/s)
+        Download: 10556/53146 items  125.9/374.3MB  33% complete (3.2M/s)
+        Download: 12752/53146 items  127.9/374.3MB  34% complete (1.6M/s)
+        Download: 14934/53146 items  142.4/374.3MB  38% complete (1.7M/s)
+        Download: 16263/53146 items  156.6/374.3MB  41% complete (2.8M/s)
+        Download: 17750/53146 items  175.2/374.3MB  46% complete (3.2M/s)
+root@ai-client1:~# <kbd>tail  /var/svc/log/system-zones-install:default.log</kbd>
+         Actions: 14096/71080 actions (Installing new actions)
+         Actions: 17986/71080 actions (Installing new actions)
+         Actions: 21739/71080 actions (Installing new actions)
+         Actions: 25137/71080 actions (Installing new actions)
+         Actions: 28848/71080 actions (Installing new actions)
+         Actions: 32244/71080 actions (Installing new actions)
+         Actions: 35602/71080 actions (Installing new actions)
+         Actions: 39909/71080 actions (Installing new actions)
+         Actions: 43946/71080 actions (Installing new actions)
+root@ai-client1:~# <kbd>svcs zones-install</kbd>
+STATE          STIME    FMRI
+offline*       17:52:37 svc:/system/zones-install:default
+root@ai-client1:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+   - ai-zone          installed   /system/zones/ai-zone        solaris    excl
+root@ai-client1:~# <kbd>svcs zones-install</kbd>
+STATE          STIME    FMRI
+online         18:00:31 svc:/system/zones-install:default
+</pre>
+
+<p>Great! It is installed. Now you can boot it, login via the console (zlogin -C ai-zone), configure its profile and start using it. As you might have guessed, you can configure the zone with manifests and system profiles the same way we did it for AI clients. But we leave this exercise for your homework.  </p>
+
+<h2>Installing different OS versions on specific clients</h2>
+
+<p>If you remember, first we have created an install service with the latest Oracle Solaris version available in our repository, which was version 11.3. Then we changed the default to 11.2.11, but what if we wanted to install a client with version 11.3? We now have two install services configured, one for 11.2.11 (which is the default) and another for 11.3. How can we specify that we want to install 11.3 instead of 11.2? You may think we must use the same mechanism we used to install a specific Solaris SRU, namely manifest. Well, you may try to create a manifest XML file and specify 11.3 instead of 11.2, but we can tell you (SPOILER ALERT!!!) that this won't work. The rule is that changing the manifest is not enough if you want to install a different Solaris <em>update</em> (i.e. second digit
+as in 11.1, 11.2, 11.3...). In this case you should use a different <em>install service</em>. Luckily, we have one installed already, its name is <code>solaris11_3-sparc</code>.</p>
+
+<p>If we want to specify the client that we want to install 11.3 on, we have to use '<code>create-client</code>' command. With this command we can associate specific clients with certain install services. Clients should be specified using their MAC addresses. Login into the client system and discover its MAC address:</p>
+
+<pre>
+root@ai-client1:~# <kbd>dladm show-phys -m</kbd>
+LINK                SLOT     ADDRESS            INUSE CLIENT
+net0                primary  0:14:4f:f8:5:f6    yes   net0
+                    1        0:14:4f:f8:3:5c    no    --
+                    2        0:14:4f:f8:ee:26   no    --
+                    3        0:14:4f:fa:c4:6f   no    --
+</pre>
+
+<p>The primary MAC address is 0:14:4f:f8:5:f6. Now switch to the AI server window and use this address to associate it with the install service <code>solaris11_3-sparc</code>.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-client -e 0:14:4f:f8:5:f6 -n solaris11_3-sparc</kbd>
+Created Client: '00:14:4F:F8:05:F6'
+root@solarislab:~# <kbd>installadm list -c</kbd>
+Service Name      Client Address    Arch  Secure Custom Args Custom Grub
+------------      --------------    ----  ------ ----------- -----------
+solaris11_3-sparc 00:14:4F:F8:05:F6 sparc no     no          no
+</pre>
+
+<p>And now, again the familiar procedure of shutting down the client and installing it from network.</p>
+
+<p>When this newly installed system reboots, you will notice that you get the system configuration screen again and you have to specify hostname, IP address, and other parameters again. Why? We have configured the system profile already to automate this process, why are we seeing this again? Take a look at the profiles list:  </p>
+
+<pre>
+root@solarislab:~# <kbd>installadm list -p</kbd>
+Service Name  Profile Name Environment Criteria
+------------  ------------ ----------- --------
+default-sparc sc-template  system      none
+</pre>
+
+<p>We have created the profile '<code>sc-template</code>' and associated it with the '<code>default-sparc</code>' install service. And '<code>default-sparc</code>' install service is an alias of the '<code>s11.2.11-sparc</code>' service. So, profiles are associated with install services. As soon as we are using a different install service, we are using it's default profile, not the one we created earlier. You can use the XML file <code>sc_template.xml</code> and create a new profile with 11.3 service--you know how to do this already. </p>
+
+<p>One more question: what if we don't have Solaris installed on the client? Like if we just have created a guest logical domain and it's completely empty? How can we figure out its MAC address?  </p>
+
+<p>Well, it takes a couple of steps. Halt the client system and get to OpenBoot prompt. Enter the following command: </p>
+
+<pre>
+{0} ok <kbd>show-devs</kbd>
+/cpu@7
+/cpu@6
+/cpu@5
+/cpu@4
+/cpu@3
+/cpu@2
+/cpu@1
+/cpu@0
+/virtual-devices@100
+/iscsi-hba
+/virtual-memory
+/memory@m0,80000000
+/aliases
+/options
+/openprom
+/chosen
+/packages
+/virtual-devices@100/channel-devices@200
+/virtual-devices@100/console@1
+/virtual-devices@100/random-number-generator@e
+/virtual-devices@100/flashprom@0
+/virtual-devices@100/channel-devices@200/virtual-domain-service@0
+ More [<space>,<cr>,q,n,p,c] ?
+/virtual-devices@100/channel-devices@200/pciv-communication@0
+/virtual-devices@100/channel-devices@200/disk@0
+/virtual-devices@100/channel-devices@200/network@0
+/iscsi-hba/disk
+/openprom/client-services
+/packages/obp-tftp
+/packages/kbd-translator
+/packages/SUNW,asr
+/packages/dropins
+/packages/terminal-emulator
+/packages/disk-label
+/packages/deblocker
+/packages/SUNW,builtin-drivers
+{0} ok
+
+</pre>
+
+<p>Find the line that represents the network interface. In our case it's '<code>/virtual-devices@100/channel-devices@200/network@0</code>'. Then 'change directory' (cd) into it and type '.properties':</p>
+
+<pre>
+{0} ok <kbd>cd /virtual-devices@100/channel-devices@200/network@0</kbd>
+{0} ok <kbd>.properties</kbd>
+local-mac-address        00 14 4f f8 05 f6
+max-frame-size           00004000
+address-bits             00000030
+reg                      00000000
+compatible               SUNW,sun4v-network
+device_type              network
+name                     network
+{0} ok
+</pre>
+
+<p>Got it! Here is our client's MAC address: 00:14:4f:f8:05:f6. You can use it with 'create-client' command now and install the system from scratch.</p>
+
+
+<h2>Installing from Unified Archives</h2>
+
+<p>One of the very important additions to Oracle Solaris in version 11.2 was Unified Archives. It gives a lot of options on systems backup and restore, systems cloning including various use cases: with or without zones, from physical to virtual and back, etc. In the following exercise we will use a UAR (Unified ARchive) file with Oracle Solaris distribution which is normally available for download from oracle.com. Alternatively, you can create you own archive from the existing system using <code>installadm(1M)</code>. Unified archive preserves everything that was installed in the system, including zones, so it's a perfect way of cloning systems with applications.  </p>
+
+<p>The plan is pretty simple:</p>
+
+<ol>
+	<li>Copy the UAR file to the AI webserver's files location (it should be visible by the client)</li>
+	<li>Copy and edit the default_archive.xml manifest file to show the archive's location (in URL format)</li>
+	<li>Install the manifest into one of the install services</li>
+	<li>Define the client criteria to install from this archive (or make it default) </li>
+</ol>
+
+<p>We have several UAR files in <code>/share1/uar</code>:</p>
+
+<pre>
+root@solarislab:~# <kbd>ls -lh /share1/uar</kbd>
+total 15405066
+-rw-r--r--   1 nobody   nobody      4.7G Jun 29  2014 sol-11_2-openstack-sparc.uar
+-rw-r--r--   1 nobody   nobody      1.3G Jul 18  2014 sol-11_2-sparc.uar
+-rw-r--r--   1 nobody   nobody      887M Sep 28 09:57 sol-11_3_1_3_0-sparc.uar
+-rw-r--r--   1 nobody   nobody      916M Jul  8 16:01 sol-11-3-beta.uar
+</pre>
+
+<p>Remember, we have configured the AI web server directory to store files, it's <code>/var/ai/ai-files/</code>. Copy one of the UAR files to that directory:</p>
+
+<pre>
+root@solarislab:~# <kbd>cp /share1/uar/sol-11_2-sparc.uar /var/ai/ai-files</kbd>
+root@solarislab:~# <kbd>chown webservd:webservd /var/ai/ai-files/sol-11_2-sparc.uar</kbd>
+
+</pre>
+
+<p>Now we have to edit the manifest XML. Remember, the local web server directory is <code>/var/ai/ai-files</code>, but from outside it looks like <code>http://10.80.11.34:5555/files</code>. Copy the default archive manifest file to the current directory and edit it.</p>
+
+<pre>
+root@solarislab:~# <kbd>cp /usr/share/auto_install/manifest/default_archive.xml ./</kbd>
+root@solarislab:~# <kbd>chmod 644 default_archive.xml</kbd>
+root@solarislab:~# <kbd>vi default_archive.xml</kbd>
+</pre>
+
+<p>Find the line with UAR location: <code><file uri="file:///.cdrom/archive.uar"/></code> and replace is with the following: </p>
+
+<pre>
+        <kbd>&lt;file uri=&quot;http://10.80.11.34:5555/files/sol-11_2-sparc.uar&quot;/&gt;</kbd>
+</pre>
+
+<p>Now add this manifest to the existing install service:</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm create-manifest -n default-sparc -m archive -c hostname=ai-client1 -f ./default_archive.xml</kbd>
+Created Manifest: 'archive'
+root@solarislab:~# <kbd>installadm list -m</kbd>
+Service Name             Manifest Name Type    Status   Criteria
+------------             ------------- ----    ------   --------
+default-sparc            archive       xml     active   hostname = ai-client1
+                         s11.2.11      xml     default  none
+                         orig_default  derived inactive none
+solaris11_2_11_5_0-sparc orig_default  derived default  none
+solaris11_3-sparc        orig_default  derived default  none
+</pre>
+
+<p>In the command above we also specified the client criteria that defines which client(s) will be installed with this manifest. We use the same client system and if you remember, last time we specified its hostname in <code>network-boot-parameters</code> as '<code>ai-client1</code>'. You may also remember that we specified its MAC address with 'create-client' command and assigned it to use Solaris 11.3 install service. This time we want to install from '<code>default-sparc</code>' install service (as soon as we have installed the manifest into it) so we have to remove this client association.</p>
+
+<pre>
+root@solarislab:~# <kbd>installadm list -c</kbd>
+Service Name      Client Address    Arch  Secure Custom Args Custom Grub
+------------      --------------    ----  ------ ----------- -----------
+solaris11_3-sparc 00:14:4F:F8:05:F6 sparc no     no          no
+root@solarislab:~# <kbd>installadm delete-client -e 00:14:4F:F8:05:F6</kbd>
+Deleted Client: '00:14:4F:F8:05:F6'
+root@solarislab:~# <kbd>installadm list -c</kbd>
+There are no clients configured for local services.
+</pre>
+
+<p>Everything is ready. Now we can try to install the client and check which Solaris version was installed. If everything goes well it should be 11.2.0 (a.k.a. General Availability release).</p>
+
+<pre>
+ai-client1 console login: lab
+Password: <kbd>oracle1</kbd>
+lab@ai-client1:~$ <kbd>pkg list entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.2.0.0.42.0    i--
+</pre>
+
+<p>Success! Did you notice that it was also faster that installing from a repository? That's because we are sending a long stream of data instead of installing the system package by package. Again, let's wrap up what we have learned.</p>
+
+<ol>
+	<li>We can install systems not only from the repository, but also from Unified Archives, essentially cloning the servers.</li>
+	<li>Installation from UAR usually goes faster than from package repository.</li>
+	<li>Don't forget to specify criteria that define which clients will be installed. You can specify it either during manifest creation/update or as a separate command.</li>
+</ol>
+
+<h2>Summary</h2>
+
+<p>We have completed this Automated Installer Hands-on Lab. Let's wrap up what we did today:</p>
+
+<ul>
+	<li>We installed our AI client system <em>seven times</em> (at least)!</li>
+	<li>We learned how to perform simple default installations</li>
+	<li>We learned how to define which Solaris version will be installed on which clients</li>
+	<li>We configured packages to be installed in addition to the standard group</li>
+	<li>We used profiles and profile templates to configure system's identity including hostnames, IP addresses and users</li>
+	<li>We used Unified Archives to clone systems and found out that in most times it's a faster and more convenient way to install systems</li>
+	<li>We automatically installed zones inside the client system</li>
+</ul>
+
+<p>There are other AI features that we didn't cover in this lab. You may want to add some other capabilities to your AI server, such as: first boot script, x86 architecture service, derived manifests and others. You may want to try AI Manifest Wizard that helps you to create XML manifests using web interface. Also it might be a good idea to configure a special role for AI administration (using Solaris Role-Based Access Control) to avoid using '<code>root</code>' role for this task.</p>
+
+<p>You will find more information about this in the official Oracle Solaris documentation here: <a href="http://docs.oracle.com/cd/E36784_01/pdf/E36800.pdf" target="http://docs.oracle.com/cd/E36784_01/pdf/E36800.pdf">http://docs.oracle.com/cd/E36784_01/pdf/E36800.pdf</a> or here: <a href="http://docs.oracle.com/cd/E36784_01/html/E36800/useaipart.html#scrolltoc" target="http://docs.oracle.com/cd/E36784_01/html/E36800/useaipart.html#scrolltoc">http://docs.oracle.com/cd/E36784_01/html/E36800/useaipart.html#scrolltoc</a> (for Oracle Solaris 11.2) and also on Oracle Technology Network (OTN): <a href="http://www.oracle.com/technetwork/server-storage/solaris11/technologies/lifecycle-management-2237945.html" target="http://www.oracle.com/technetwork/server-storage/solaris11/technologies/lifecycle-management-2237945.html">http://www.oracle.com/technetwork/server-storage/solaris11/technologies/lifecycle-management-2237945.html</a></p>
+
+<p><em>Thank you! Please, don't stop learning. Good luck!</em></p>
+
+</body>
+</html>

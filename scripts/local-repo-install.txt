@@ -1,0 +1,55 @@
+Set up a Local Repository
+
+We need an IPS repository available to install a zone in our lab. Network might be not available in many places, or its bandwidth is too low to serve several simultaneous installations. That's why we have to have our own repository inside the VM. Full repository is too big, so we have to install in the repository only those packages that are absolutely necessary for a zone installation and other lab exercises. Here are the instructions.
+
+1. Create a ZFS file system to hold your local repository.
+
+# ﻿zfs create -o mountpoint=/repo -o compress=on rpool/repo
+
+2. Create an empty repository in it
+
+# pkgrepo create /repo
+
+3. Use the attached text file 'lab-pkgs.txt' with the list of necessary packages. We need these packages to be able to install a zone and also there are AMP (Apache, MySQL, PHP) packages added which we'll need for the "cloud in a box" lab. Copy this file to your current directory.
+
+
+4. Populate your local repository with the required packages. There are a couple of ways of doing that:
+# ﻿for f in `cat lab-pkgs.txt` ; \ 
+do pkgrecv -s http://pkg.oracle.com/solaris/release -d /repo $f ; \ 
+echo $f ; \ 
+done
+
+OR:
+cat lab-pkgs.txt | xargs pkgrecv -s http://pkg.oracle.com/solaris/release -d /repo
+
+Of course, you can add other packages from the official repository:
+
+# pkgrecv -s http://pkg.oracle.com/solaris/release -d /repo <FMRI>
+replace <FMRI> with the package name in a form like this:
+pkg://solaris/shell/bash
+
+
+AND THEN:
+
+pkgrepo rebuild -s /repo
+
+
+
+5. Check if you really have 234 packages (it might be more, we might have added packages for our demo purposes)
+
+# pkgrepo info -s file:///repo
+
+6. Set up and enable package repository service in the global zone:
+
+# svccfg -s application/pkg/server setprop pkg/inst_root=/repo   
+# svcprop -p pkg/inst_root application/pkg/server   (Just checking...)
+# svcadm refresh application/pkg/server 
+# svcadm enable application/pkg/server 
+
+7. Switch repositories (disable the all existing ones and mirrors and enable the local one):
+
+# pkg set-publisher -G '*' -M '*' -g http://10.0.2.15/ solaris
+
+Note that it should use your global zone's IP address (in this case, provided automatically by VirtualBox). Then all the zones you create will keep this address and be able to install packages from the global zone. It won't work if you set your repository's HTTP address just to http://localhost. 
+
+

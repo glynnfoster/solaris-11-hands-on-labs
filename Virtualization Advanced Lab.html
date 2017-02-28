@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Virtualization Tips and Tricks</title>
+<meta name="generator" content="Bluefish 2.2.2" >
+<meta name="author" content="Pavel" >
+<meta name="date" content="2014-03-03T11:17:10-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2014">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1>Oracle Solaris 11 Virtualization Tips and Tricks</h1>
+
+
+<h2>Automating Zone Configuration and Installation</h2>
+
+<p>On our previous Virtual Sysadmin Sessions we have learned how to configure and install zones in Oracle Solaris 11. We have also learned a simple way to produce copies of your application or development environment by cloning zones. You can easily install all the necessary packages and services in one zone and then clone it as many times as you need. All the packages will be installed and all the services will be up and running after the first boot. It's all good, but still we had to create our first zone manually. In this lab we will show how to automate this process and install a fully configured and customized zone from scratch using simple configuration files.</p>
+
+<p>In this example we are going to create a zone which is ready for use as a general purpose web server. It will have all components of an AMP (Apache, MySQL, PHP) environment and two network interfaces: one for external communications and another for internal connection (to a separate database server, for example). It will look very similar to the one we have created in our lab called "Cloud in a Box" during Virtual Sysadmin Day last year.</p>
+
+<p>First, we have to create a ZFS file system to store our zone. You know how to do this, don't you? And, just to remind you, you have to become root ('<code>su -</code>') before doing all the exercises below.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create -o mountpoint=/zones rpool/zones</kbd>
+</pre>
+
+<p>Also we will need a VNIC for the zone's internal connection. Let's create it and name it 'amp0'. </p>
+
+<pre>
+root@solaris:~# <kbd>dladm create-vnic -l net0 amp0</kbd>
+</pre>
+
+<p>During the VirtualBox preparation stage we have created an additional network interface. We are going to use it in our zone for external communications. In order to do that we have to remove its IP stack in the global zone. It will be still configured as a datalink.</p>
+
+<pre>
+root@solaris:~# <kbd>ipadm delete-ip net1</kbd>
+</pre>
+
+
+<p>Now we have to prepare three configuration files. The first one will be used to configure the zone with '<code>zonecfg</code>' command. The second one will be used to install the zone, install all packages we need in the zone. The third file will configure the zone's internal parameters like hostname, time zone etc. The name of the zone will be '<code>amp</code>' (as in Apache, MySQL, PHP) so we will call the files <code>amp-config.txt</code>, amp-manifest.xml and <code>amp-profile.xml</code> respectively.</p>
+
+<h3>Zone Configuration File</h3>
+
+<p>This file is a plain text file which can be created using your favorite text editor (some prefer '<code>vi</code>', some '<code>gedit</code>', both are available in the default Oracle Solaris 11 VM installation). Your zone configuration file should look like this:</p>
+
+<pre>
+root@solaris:~# <kbd>cat amp-config.txt </kbd>
+create -b
+set brand=solaris
+set zonepath=/zones/amp
+set autoboot=false
+set ip-type=exclusive
+add net
+set physical=amp0
+set allowed-address=10.0.2.21/24
+end
+add net
+set physical=net1
+set allowed-address=192.168.56.20/24
+set defrouter=192.168.56.1
+end
+add capped-cpu
+set ncpus=0.5
+end
+</pre>
+
+<p>In this file we have configured two network interfaces with fixed IP addresses, the path where the zone will store its files and the zone's resource management cpu controls, the number of cpus allocated to the zone.</p>
+
+
+
+<h3>Zone Manifest File</h3>
+
+<p>In the manifest file we use Automated Installer's format and describe packages we are going to install inside the zone. The easiest way to create it is to copy the existing template and then edit it. </p>
+
+<pre>
+root@solaris:~# <kbd>cp /usr/share/auto_install/manifest/zone_default.xml ~/amp-manifest.xml</kbd>
+root@solaris:~# <kbd>chmod u+w amp-manifest.xml</kbd>
+root@solaris:~# <kbd>vi amp-manifest.xml</kbd> <em>(or use gedit, if you prefer)</em>
+</pre>
+
+<p>Edit the manifest file: find the line with '<code><name>pkg:/group/system/solaris-small-server</name></code>' at the end of the file and add the following line right after it:
+</p>
+<pre>
+                &lt;name&gt;pkg:/group/feature/amp&lt;/name&gt;
+</pre>
+
+<p>As you can see, by default zones are installed with only minimal group of packages, which is called <code>solaris-small-server</code> (about 185 packages). We have added another group of packages that contains Apache, MySQL, PHP and all their dependencies. In a similar manner you can add any package or group of packages -- just use its package name from '<code>pkg list</code>' command output with '<code>pkg:/</code>' added to the front. Just for practice purposes, try to add another package to the zone, like text-based browser '<code>links</code>' which might be helpful inside the zone.</p>
+
+<h3>Zone Profile File</h3>
+
+<p>We use this file to avoid first time boot configuration process. We want our zone to be up and running and ready to serve web requests right after the first boot, so we will use this profile file during the installation process. We will use '<code>sysconfig</code>' utility to create the profile file which is called '<code>amp-profile.xml</code>'. Enter the command:</p>
+
+<pre>
+root@solaris:~# <kbd>sysconfig create-profile -o amp-profile.xml</kbd>
+</pre>
+
+<p>On the following screens configure the following (move from one screen to another using [F2]):</p>
+
+<p>
+<ul>
+<li>Hostname: <code>amp</code></li>
+<li>Network configuration: <code>None</code> (we have already configured network interfaces in <code>amp-config.txt</code>)</li>
+<li>Root password: solaris1</li>
+<li>User: Lab User; username: lab; password: oracle1</li>
+<li>Time zone: your actual time zone</li>
+</ul>
+</p>
+
+<p>After you have finished this dialog, check if you have created a file called amp-profile.xml in your current directory. We have to edit it a little bit. </p>
+
+<pre>
+root@solaris:~# <kbd>ls -l amp-profile.xml</kbd>
+root@solaris:~# <kbd>chmod u+w amp-profile.xml</kbd>
+root@solaris:~# <kbd>vi amp-profile.xml</kbd>
+</pre>
+
+<p>Go to the very end of this file and just <em>before</em> the final line with <code>&lt;/service_bundle&gt;</code> insert the following three lines:</p>
+
+<pre>
+  &lt;service version=&quot;1&quot; type=&quot;service&quot; name=&quot;network/http&quot;&gt;
+ 	&lt;instance enabled=&quot;true&quot; name=&quot;apache22&quot; /&gt;
+  &lt;/service&gt;
+</pre>
+
+<p>This will enable Apache web service and our zone will be ready for use after the first boot.</p>
+
+
+<h3>Zone Installation</h3>
+
+<p>Now everything is prepared for the actual zone installation. There will be just two commands for that: the first one configures the zone, and the second installs it using the manifest and profile we've just created.</p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z amp -f amp-config.txt</kbd>
+root@solaris:~# <kbd>zoneadm -z amp install -m ~/amp-manifest.xml -c ~/amp-profile.xml</kbd>
+</pre>
+
+<p>Now you have to wait for several minutes until the zone is completely installed. After the installation is completed, boot the zone and login into it to check if everything is OK. It may take a while (about a minute or so) until all services in the zone have started and you get a login prompt. </p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z amp boot</kbd>
+root@solaris:~# zlogin -C amp
+[Connected to zone 'amp' console]
+
+amp console login: <kbd>lab</kbd>
+Password: <kbd>oracle1</kbd>
+Oracle Corporation      SunOS 5.11      11.1    September 2012
+lab@amp:~$ <kbd>ipadm</kbd>
+NAME              CLASS/TYPE STATE        UNDER      ADDR
+amp0              ip         ok           --         --
+   amp0/v4        from-gz    ok           --         10.0.2.21/24
+lo0               loopback   ok           --         --
+   lo0/v4         static     ok           --         127.0.0.1/8
+   lo0/v6         static     ok           --         ::1/128
+net1              ip         ok           --         --
+   net1/v4        from-gz    ok           --         192.168.56.20/24
+lab@amp:~$ <kbd>svcs apache22</kbd>
+STATE          STIME    FMRI
+online         14:51:03 svc:/network/http:apache22
+lab@amp:~$ 
+</pre>
+
+<p>Perfect! Both interfaces are configured, with internal and external addresses. External address (192.168.56.20) should be available from our host machine (as we have configured it in VirtualBox as Host-only network). Try opening this address in your host machine's browser and you should see "It works!" from your zone's Apache web server. Just to make sure you are talking to your zone, try to login into it, become root and change <code>/var/apache2/2.2/htdocs/index.html</code> to something more meaningful.</p>
+
+<h2>Zone Resource Monitoring and Management</h2>
+
+<p>Now we have installed our zone successfully and it's now up and running. Now you want to make sure that this zone will not take over your system resources and will behave well with other tenants (i.e. zones). We have already made our first step toward that: remember the '<code>ncpus</code>' parameter we have set in the configuration file? We have limited the zone's utilization of CPUs by only one half of a CPU. Let's check if the zone follows our orders. Open two terminal windows, become <code>root</code> in both of them. In the first window start a '<code>zonestat</code>' command: 
+</p>
+
+<pre>
+root@solaris:~# <kbd>zonestat 5</kbd> (5 is the interval in seconds, like in all other *stat commands)
+</pre>
+
+<p>You can see now how this command is printing out CPU utilization, memory utilization, even network bandwidth utilization. Our <code>amp</code> zone is not particularly busy right now. Let's put some load on it. In another terminal window (remember, you have to be <code>root</code>!) enter the following command (it just generates a lot of system calls to keep CPU busy):</p>
+
+<pre>
+root@solaris:~# <kbd>zlogin amp 'while true ; do date > /dev/null ; done'</kbd>
+</pre>
+
+<p>Check your first window, where <code>zonestat</code> is running. You should be able to see something like this:</p>
+
+<pre>
+Interval: 3, Duration: 0:00:15
+SUMMARY                   Cpus/Online: 1/1   PhysMem: 1535M  VirtMem: 2559M
+                    ---CPU----  --PhysMem-- --VirtMem-- --PhysNet--
+               ZONE  USED %PART  USED %USED  USED %USED PBYTE %PUSE
+            [total]  0.60 60.8% 1097M 71.4% 1633M 63.8%     0 0.00%
+           [system]  0.07 7.25%  523M 34.0%  946M 36.9%     -     -
+                amp  0.49 49.7%  100M 6.56%  188M 7.35%     0 0.00%
+             global  0.03 3.83%  473M 30.8%  498M 19.4%     0 0.00%
+
+Interval: 4, Duration: 0:00:20
+SUMMARY                   Cpus/Online: 1/1   PhysMem: 1535M  VirtMem: 2559M
+                    ---CPU----  --PhysMem-- --VirtMem-- --PhysNet--
+               ZONE  USED %PART  USED %USED  USED %USED PBYTE %PUSE
+            [total]  0.60 60.9% 1097M 71.4% 1633M 63.8%     0 0.00%
+           [system]  0.07 7.43%  523M 34.0%  946M 36.9%     -     -
+                amp  0.49 49.7%  100M 6.57%  187M 7.34%     0 0.00%
+             global  0.03 3.74%  473M 30.8%  498M 19.4%     0 0.00%
+
+</pre>
+
+<p>You see? Our <code>amp</code> zone behaves really well, strictly following the rules we have established and not overusing its CPU limit by a tenth of per cent! </p>
+
+<p>OK, but how can we tell what limit was set for the zone and what percentage <em>of that limit</em> the zone is using? It should be good to know for planning purposes. Run zonestat with the following parameter and watch the output:</p>
+
+<pre>
+root@solaris:~# <kbd>zonestat  -r default-pset 5</kbd>
+Collecting data for first interval...
+Interval: 1, Duration: 0:00:05
+PROCESSOR_SET                   TYPE  ONLINE/CPUS     MIN/MAX
+pset_default            default-pset          1/1         1/1
+                                ZONE  USED %USED   CAP  %CAP   SHRS  %SHR %SHRU
+                             [total]  0.60 60.8%     -     -      -     -     -
+                            [system]  0.07 7.16%     -     -      -     -     -
+                                 amp  0.49 49.8%  0.50 99.6%      -     -     -
+                              global  0.03 3.82%     -     -      -     -     -
+
+Interval: 2, Duration: 0:00:10
+PROCESSOR_SET                   TYPE  ONLINE/CPUS     MIN/MAX
+pset_default            default-pset          1/1         1/1
+                                ZONE  USED %USED   CAP  %CAP   SHRS  %SHR %SHRU
+                             [total]  0.60 60.7%     -     -      -     -     -
+                            [system]  0.06 6.98%     -     -      -     -     -
+                                 amp  0.49 49.8%  0.50 99.7%      -     -     -
+                              global  0.03 3.85%     -     -      -     -     -
+
+
+</pre>
+
+<p>This output clearly shows that CPU cap was set to 0.5 for <code>amp</code> zone (column CAP) and it is used by almost 100%. Clearly the zone is too busy and needs more resources.</p>
+
+<p>We can manage zone's resources on the fly, without stopping the zone. Use the following command to increase CPU resource assignment to 0.7:</p>
+
+<pre>
+root@solaris:~# prctl -n zone.cpu-cap -r -v 70 -i zone amp
+</pre>
+
+<p>Check the result with <code>zonestat -r default-pset 5</code> as in the example above. Of course, on real systems, especially on SPARC T-series boxes, there are much more CPUs you can assign to a zone. For instance, to assign 8 virtual CPUs (i.e. hardware threads) you will use 800 instead of 70 in the <code>prctl</code> commmand. You may also experiment even with your VirtualBox VM if you increase the number of CPUs in the virtual machine using VirtualBox Manager. You can check how many CPUs are available in the system by using the following commands:</p>
+
+<pre>
+root@solaris:~# <kbd>psrinfo</kbd>
+0	on-line   since 12/24/2013 04:34:18
+You have new mail in /var/mail/root
+root@solaris:~# <kbd>psrinfo -v</kbd>
+Status of virtual processor 0 as of: 12/24/2013 09:48:14
+  on-line since 12/24/2013 04:34:18.
+  The i386 processor operates at 2586 MHz,
+	and has an i387 compatible floating point processor.
+root@solaris:~# <kbd>psrinfo -pv</kbd>
+The physical processor has 1 virtual processor (0)
+  x86 (GenuineIntel 306A9 family 6 model 58 step 9 clock 2586 MHz)
+	Intel(r) Core(tm) i5-3320M CPU @ 2.60GHz
+</pre>
+
+<p>As you can see, you can get even more information about processors than you needed.</p>
+
+
+<h2>Zone Migration</h2>
+
+<p>Imagine that you have checked zone's utilization level (using the commands above) and realized that you have to add more CPUs to that zone. But apparently you don't have enough CPUs on this particular server. The only way to increase the zone's performance is to move it to another server that has more CPUs available. Let's learn how to do that. There are several ways of migrating zones; we will describe here just one of them. We will give you links to other ways at the end of this exercise.</p>
+
+<p>In our example we are going to use ZFS send/receive command to migrate the zone's data (you can learn more about it in our Data Management section of this Hands-on Lab). We will use an external virtual drive attached to our VirtualBox VM to model an external disk array. First, we have to create it. Shutdown your Solaris OS and open VirtualBox Manager. Add a 1GB external drive to the VM using the following snapshots as a guide. </p>
+
+<p>Now start the VM again, log in, open a terminal window, become root and create a new ZFS pool. (You can find a more detailed explanation of the commands below in our Data Management section).</p>
+
+<pre>
+root@solaris:~# <kbd>echo | format</kbd> <em>(this command prevents format from going into interactive mode)</em>
+Searching for disks...done
+
+
+AVAILABLE DISK SELECTIONS:
+       0. c7t0d0 <ATA-VBOX HARDDISK-1.0-16.00GB>
+          /pci@0,0/pci8086,2829@d/disk@0,0
+       1. c8t0d0 <VBOX-HARDDISK-1.0 cyl 1022 alt 2 hd 64 sec 32>
+          /pci@0,0/pci1000,8000@16/sd@0,0
+Specify disk (enter its number): Specify disk (enter its number): 
+root@solaris:~# <kbd>zpool create labpool c8t0d0</kbd>
+</pre>
+
+<p>Create a new ZFS file system to store your zone's data.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs create labpool/zones</kbd>
+</pre>
+
+<p>Now shutdown the zone, detach it (to prevent it from booting on this host), and export its configuration to a file. </p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z amp shutdown</kbd>
+root@solaris:~# <kbd>zoneadm -z amp detach</kbd>
+root@solaris:~# <kbd>zonecfg -z amp export > /labpool/zones/amp-config.txt</kbd>
+</pre>
+
+<p>Now create a snapshop of the zone's file system and migrate it to the external pool.</p>
+
+<pre>
+root@solaris:~# <kbd>zfs snap -r rpool/zones/amp@snap1</kbd>
+root@solaris:~# <kbd>zfs send -r rpool/zones/amp@snap1 | zfs recv labpool/zones/amp</kbd>
+</pre>
+
+<p>Now after we have copied all we needed to the external drive, we can export the pool to prepare it for migration to another host.</p>
+
+<pre>
+root@solaris:~# <kbd>zpool export labpool</kbd>
+</pre>
+
+<p>Next step should be powering off your server and physically detaching the drive. Our VirtualBox equivalent will be shutdown Solaris from the desktop menu (System->Shut Down) and removing the virtual disk from the virtual machine. </p>
+
+<img src="img/shutdown.png" width="437" height="337" alt="shutdown" /> <p></p>
+
+
+<img src="img/remove-disk2.png" width="768" height="576" alt="remove disk" />
+
+<p>Now it's time to decide what is going to be our target machine. The best way is to re-import the Oracle Solaris appliance (that huge file you have downloaded while preparing for this lab) and configure the new virtual machine similarly to the source machine. So, import the appliance (most likely it will get the name "Oracle Solaris 11.1_1" or something like this) and before starting it, make a couple of changes. First, add an extra network interface (remember, our zone needs it for external communications) and then add the virtual disk from our source VM. </p>
+
+<img src="img/add-net1.png" width="768" height="579" alt="add net1" />
+
+<p>Make sure the interface is configured "Host-only".</p>
+
+<img src="img/add-vdisk.png" width="770" height="576" alt="add disk" />
+
+<p>On this step you should find the virtual disk you have created for the source machine. Go one level up and then enter your source VM's directory (most likely it is named "Oracle Solaris 11.1"). Choose the <code>.vdi</code> file you have created when configuring the VM. Most likely it is named "<code>NewVirtualDisk1.vdi</code>".</p>
+
+<p>Now the target virtual machine is configured you can start it. If you just have imported the appliance downloaded from oracle.com, you have to perform the same configuration steps described in the "VM preparation" step (hostname, root password, normal user, time zone etc.). Then login and open the Terminal application. Become root (su -) and prepare your new system to run our <code>amp</code> zone: it should have a VNIC called <code>amp</code>0 and also a datalink interface <code>net1</code>, but not an IP interface.</p>
+
+<pre>
+root@solaris:~# <kbd>ipadm delete-ip net1</kbd>
+root@solaris:~# <kbd>dladm create-vnic amp0</kbd>
+</pre>
+
+<p>The rest is easy. Import the ZFS pool which is located on the virtual disk we have attached to the VM.</p>
+
+<pre>
+root@solaris:~# <kbd>zpool import</kbd>
+  pool: labpool
+    id: 9911583814859309846
+ state: ONLINE
+action: The pool can be imported using its name or numeric identifier.
+config:
+
+	labpool   ONLINE
+	  c7t2d0  ONLINE
+root@solaris:~# <kbd>zpool import labpool</kbd>
+</pre>
+
+
+<p>We have to import the zone configuration from the file we have created with 'zonecfg export' operation. But before that we will edit the file to point to the new location of the zone root file system. </p>
+
+
+<pre>
+root@solaris:~# <kbd>vi /labpool/zones/amp-config.txt</kbd> 
+<em>Change '<strong>set zonepath=/zones/amp</strong>' to '<strong>set zonepath=/labpool/zones/amp</strong>' and save the file.</em>
+root@solaris:~# <kbd>zonecfg -z amp -f /labpool/zones/amp-config.txt </kbd>
+zonecfg -z amp -f /labpool/zones/amp-config.txt
+
+
+root@solaris:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   - amp              configured /labpool/zones/amp             solaris  excl  
+</pre>
+
+<p>And now attach the zone (it already knows where its data is):</p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z amp attach</kbd>
+Progress being logged to /var/log/zones/zoneadm.20131226T193054Z.amp.attach
+    Installing: Using existing zone boot environment
+      Zone BE root dataset: labpool/zones/amp/rpool/ROOT/solaris
+                     Cache: Using /var/pkg/publisher.
+  Updating non-global zone: Linking to image /.
+Processing linked: 1/1 done
+  Updating non-global zone: Auditing packages.
+No updates necessary for this image.
+
+  Updating non-global zone: Zone updated.
+                    Result: Attach Succeeded.
+Log saved in non-global zone as /labpool/zones/amp/root/var/log/zones/zoneadm.20131226T193054Z.amp.attach
+root@solaris:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS     PATH                           BRAND    IP    
+   0 global           running    /                              solaris  shared
+   - amp              installed  /labpool/zones/amp             solaris  excl  v
+</pre>
+
+<p>Now start the zone, wait until it boots and check if the web server is up and running. On your host machine in the browser address line enter: '192.168.56.20' and enjoy this simple message: "It works!".</p>
+
+<pre>
+root@solaris:~# zoneadm -z amp boot
+</pre>
+
+<p>Yes, it was not extremely easy, I agree. It was not just a couple mouse clicks and it was not drag-and-drop operation for sure. But:</p>
+
+<ol>
+<li>Now you understand things much better when you have done it with your own fair hands. You understand the mechanics and the requirements of zone migration. </li>
+<li>You can easily script all of the above and automate this process.</li>
+<li>You can do this with Oracle EM Ops Center more user-friendly interface, but now you understand what's going on behind the scene!</li>
+</ol>
+
+<p>It should be noted that there are many other ways of migrating zones. You can pack the zone's dataset into an archive and attach the zone from archive. It is described here: http://docs.oracle.com/cd/E26502_01/html/E29024/migrat.html#scrolltoc. </p>
+
+<p>You can also use a new Oracle Solaris 11.1 feature called Zones on Shared Storage (ZOSS). It is perfectly described by Jeff Victor here: http://www.oracle.com/technetwork/articles/servers-storage-admin/zones-on-shared-storage-1896088.html </p>
+
+<p>Experiment with other methods and figure out which one fits your needs better. Use VirtualBox as your sandbox and don't be afraid to break things!</p>
+
+
+
+</body>
+</html>

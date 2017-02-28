@@ -1,0 +1,80 @@
+How to create a local repository just enough to install a zone
+
+
+
+1. Create a directory or a ZFS file system to hold your local repository.
+
+# ﻿zfs create -o mountpoint=/repo -o compress=gzip rpool/repo
+
+2. Create an empty repository in it
+
+# pkgrepo create /repo
+
+3. Create a list of packages we need in a zone. The easiest way
+is to install a zone using the default repository and then list all the packages installed there:
+
+zlogin zone1 pkg list > zone-pkgs-just-installed.txt
+
+Then I have installed the amp package in the zone because I need it for the rest of the lab and then took another list:
+
+zlogin zone1 pkg list > zone-pkgs-with-amp.txt
+
+We need just the first column:
+
+cut -f 1 -d ' ' zone-pkgs-with-amp.txt > z-p-w-amp-1col.txt
+
+Then we have to add pkg://solaris/ before package names
+
+for s in `cat z-p-w-amp-1col.txt` ; do echo "pkg://solaris/"$s ; done > z-p-w-amp-with-pkg.txt
+
+﻿
+Also if I want to do the lab about IPS Packaging, I need to have gnuplot and its dependencies in my repo.
+I ran this:
+# pkg install -nv gnuplot
+
+and figured out that I need 5 packages:
+pkg://solaris/image/gnuplot
+pkg://solaris/library/gd
+pkg://solaris/library/graphics/wxwidgets
+pkg://solaris/library/sdl
+pkg://solaris/runtime/lua
+
+so I have added them to the file above and renamed it to lab-pkgs.txt
+
+ALSO we have to add the original Java consolidation package (in addition to the latest one) to satisfy dependencies (I have not figured out yet why, but it works only after adding this to the repo):
+
+pkg://solaris/consolidation/java/java-incorporation@0.5.11,5.11-0.175.1.0.0.24.0:20120904T175431Z (all in one line)
+
+4. Populate your local repository with the required packages. There are a couple of ways of doing that:
+# ﻿for f in `cat lab-pkgs.txt` ; \ 
+do pkgrecv -s http://pkg.oracle.com/solaris/release -d /repo $f ; \ 
+echo $f ; \ 
+done
+
+OR:
+cat lab-pkgs.txt | xargs pkgrecv -s http://pkg.oracle.com/solaris/release -d /repo
+
+
+
+AND THEN:
+
+pkgrepo rebuild -s /repo
+
+
+
+5. Check if you really have 234 packages (it might be more, we might have added packages for our demo purposes)
+
+# pkgrepo info -s file:///repo
+
+6. Set up and enable package repository service in the global zone:
+
+# svccfg -s application/pkg/server setprop pkg/inst_root=/repo   
+# svcprop -p pkg/inst_root application/pkg/server   (Just checking...)
+# svcadm refresh application/pkg/server 
+# svcadm enable application/pkg/server 
+
+7. Switch repositories (disable the all existing ones and mirrors and enable the local one):
+
+# pkg set-publisher -G '*' -M '*' -g http://10.0.2.15/ solaris
+
+Note that it should use your global zone's IP address (in this case, provided automatically by VirtualBox). Then all the zones you create will keep this address and be able to install packages from the global zone. It won't work if you set your repository's HTTP address just to http://localhost. 

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 ZFS Lab</title>
+<meta name="generator" content="Bluefish 2.2.8" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2016-03-29T11:08:49-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2015">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+<title>ZFS Backup and Restore</title>
+</head>
+<body>
+
+zfs create -o compression=lz4 -o mountpoint=/data rpool/data
+root@solarislab:~# cp -rp /usr/share/man/ /data/
+root@solarislab:~# zfs list rpool/data
+NAME         USED  AVAIL  REFER  MOUNTPOINT
+rpool/data  94.5M  19.8G  94.5M  /data
+
+root@solarislab:~# zfs snapshot rpool/data@backup-`date +%Y-%m-%d`
+root@solarislab:~# zfs list -t filesystem,snapshot
+
+root@solarislab:~# echo | format
+Searching for disks...done
+
+
+AVAILABLE DISK SELECTIONS:
+       0. c1d0 <VBOX HAR-1c17d137-da7226a-0001-31.25GB>
+          /pci@0,0/pci-ide@1,1/ide@0/cmdk@0,0
+       1. c1d1 <VBOX HAR-91853af1-3606579-0001 cyl 1021 alt 2 hd 64 sec 32>
+          /pci@0,0/pci-ide@1,1/ide@0/cmdk@1,0
+Specify disk (enter its number): Specify disk (enter its number): 
+root@solarislab:~# zpool create bpool /dev/dsk/c1d1
+root@solarislab:~# zfs send rpool/data@backup-2016-03-28 | zfs recv -o compression=lz4 bpool/backup
+
+
+
+root@solarislab:~# zfs list -r -t filesystem,snapshot bpool/backup
+NAME                             USED  AVAIL  REFER  MOUNTPOINT
+bpool/backup                    94.3M   882M  94.3M  /bpool/backup
+bpool/backup@backup-2016-03-28      0      -  94.3M  -
+
+
+root@solarislab:~# zfs destroy rpool/data
+cannot destroy 'rpool/data': filesystem has children
+use '-r' to destroy the following datasets:
+rpool/data@backup-2016-03-28
+root@solarislab:~# zfs destroy -r rpool/data
+root@solarislab:~# zfs list rpool/data
+cannot open 'rpool/data': filesystem does not exist
+
+root@solarislab:~# zfs send bpool/backup-2016-03-28@backup-2016-03-28 | zfs recv -o compression=lz4 -o mountpoint=/data rpool/data
+
+root@solarislab:~# ls -R /data
+
+
+
+
+
+</body>
+</html>

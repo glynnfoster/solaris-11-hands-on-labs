@@ -1,0 +1,150 @@
+<html>
+<head>
+<title>Introduction to Oracle Solaris 11 Hands-on Lab</title>
+<meta name="generator" content="Bluefish 2.2.5" >
+<meta name="author" content="Pavel" >
+<meta name="date" content="2014-06-30T17:27:46-0400" >
+<meta name="copyright" content="Oracle Corporation, 2011-2013">
+<meta charset="utf-8" />
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+ 
+<img src="img/O_Solaris_11_clr.gif" alt="Oracle Solaris 11" style="position: relative; " />
+<h1>An Introduction to Oracle Solaris 11</h1> 
+
+<h3><em>Author: Pavel Anni, Oracle</em></h3>
+<h4><em>pavel.anni@oracle.com</em></h4><h4><em>February 2013</em></h4>
+<h2>Lab Introduction </h2><p>In this lab we introduce the most interesting features of Solaris 11, based on real life use cases. We will: </p><ul>
+<li>create a pool and a file system with ZFS; expand it; snapshot and clone it; use ZFS compression and deduplication; </li>
+<li>create a new boot environment as a backup, make our current system unbootable because of some fatal mistakes, reboot the system using backup BE;</li>
+<li>use new packaging system called IPS to search, install, verify and fix packages; update the system using IPS and Boot Environments together;</li>
+<li>use new networking commands, configure virtual network interfaces;</li><li>create a couple of zones; install some applications into them; clone a zone; use Resource Management with the zones; </li>
+</ul>
+
+<h2>Prerequisites </h2><p>This lab requires access to a Solaris 11 system either natively or in a VirtualBox virtual machine.</p>
+<h3>Using Virtual Box VM</h3> <p>If you're performing this lab on your laptop or desktop, we've provided a VirtualBox appliance that contains 
+all the software and configuration necessary to complete this lab. 
+All you need is VirtualBox software and a modern (with a CPU supporting virtualization turned on, AMD-V or VT-x) 
+laptop/desktop with at least 3 GB of RAM and 10GB of free disk space. </p><ul>
+<li>Download and install the latest version of VirtualBox for your platform (http://www.virtualbox.org/wiki/Downloads). </li>
+<li>Download and install the latest version of VirtualBox Extensions Pack (http://www.virtualbox.org/wiki/Downloads).</li><li>Download or find on the provided DVD/USB and import the Hands On Lab machine into VirtualBox (File > Import Appliance). 
+You will have to accept the OTN Oracle Solaris license to use the appliance. </li></ul>
+
+
+
+<h2>The Environment</h2> <p>In this lab we are going to use Oracle Solaris 11 virtual appliance in Oracle VirtualBox environment. 
+If you are using lab machines, the appliance is already installed. You can also download the appliance 
+from Oracle Technology Network. </p>
+
+<p>The Hands On Lab virtual appliance contains the following: </p><ul>
+<li>Solaris 11 installation configured for this lab</li> <li>This lab document</li> 
+</ul>
+
+<p>By default, VirtualBox assigns the IP address 10.0.2.15 to the Solaris global zone. 
+We will be using also IP addresses 10.0.2.21 and 10.0.2.22 for local zones. As we are using VirtualBox in NAT (network address translation) mode, 
+this shouldn't interfere with your outside network environment. </p>
+
+<p>You should login into Solaris desktop with the following credentials: </p>
+<p>Username: <code><strong>lab</strong></code> Password: <code><strong>oracle1</strong></code> </p><p>After logging in, open a terminal window and assume the root role: </p><pre>lab@solaris:~$ <strong>su -</strong> </pre>
+<p>Password for root is: <code><strong>solaris1</strong></code>. <p>Note: we don't recommend to log in as <code>root</code>. In Solaris 11 it is prohibited by default; 
+<code>root</code> is only a role, not a login name.</p>
+
+
+<h2>Lab Outline </h2>
+<p>The labs are independent from each other, you can take them in any order. We just recommend doing all 
+exercises in each lab in order.</p>
+<table>
+
+<tr><th>#</th> <th>Topic (Use Case)</th>  <th>Exercise</th></tr> 
+<tr><td colspan=3 valign="left"><strong><a href="ZFS%20Lab.html">ZFS Lab</a></strong></td></tr>
+<tr><td><a href="ZFS%20Lab.html#Z.1">Z.1</a></td> 
+<td>You have some disks to use for your new file system. Create a new disk pool and a file system on top of it.</td>  <td>ZFS Pools</td> </tr>
+<tr><td><a href="ZFS%20Lab.html#Z.2">Z.2</a></td> 
+<td>You have to create home directories for your users; use file system quota to limit their space.</td> 
+<td>ZFS File systems</td> </tr>
+<tr><td><a href="ZFS%20Lab.html#Z.3">Z.3</a></td> 
+<td>You are becoming low on your disk space. Add a couple more disks to your pool and expand your file system. What other ZFS features can help you to save space in the future?</td> 
+<td>ZFS Compression</td></tr> <tr><td><a href="ZFS%20Lab.html#Z.4">Z.4</a></td> 
+ <td>Users tend to keep a lot of similar files in their archives. Is it possible to save space by using 
+ deduplication?</td> <td>ZFS Deduplication</td></tr><tr><td><a href="ZFS%20Lab.html#Z.5">Z.5</a></td> 
+<td>A user has accidentally deleted her file. How to restore it without getting to the backup?</td> 
+ <td>ZFS Snapshots</td> </tr>
+ <tr><td><a href="ZFS%20Lab.html#Z.6">Z.6</a></td> 
+<td>You need a copy of your data to work on it separately (e.g. for test/dev environment). How to create a copy of your multi-terabyte dataset really fast?</td> 
+ <td>ZFS Clones</td> </tr>
+<tr><td colspan=3 valign="left"><strong><a href="BE%20Lab.html">Boot Environments Lab</a></strong></td></tr>
+<tr><td><a href="BE%20Lab.html#B.1">B.1</a></td> 
+<td>You want to be protected from mistakes and always have a backup to boot from.</td> 
+ <td>Boot Environments</td></tr>
+ 
+<tr><td colspan=3 valign="left"><strong><a href="IPS%20Lab.html">IPS Lab</a></strong></td></tr>
+<tr><td><a href="IPS%20Lab.html#P.1">P.1</a></td> 
+<td>Solaris 11 has a new packaging system. How to use it?</td>  <td>IPS Basics</td> </tr>
+<tr><td><a href="IPS%20Lab.html#P.2">P.2</a></td> 
+<td>How can the new packaging system be used to minimize downtime when updating your Solaris installation?</td>  <td>IPS and Boot Environments</td> </tr>
+ 
+<tr><td colspan=3 valign="left"><strong><a href="Networking%20Lab.html">Networking Lab</a></strong></td></tr>
+<tr><td><a href="Networking%20Lab.html#N.1">N.1</a></td> 
+<td>Solaris 11 introduces new networking commands. What's new and what's the difference?</td>  <td>Networking Basics</td> </tr>
+<tr><td><a href="Networking%20Lab.html#N.2">N.2</a></td> 
+<td>You want to create several virtual network interfaces to use with your zones.</td>  <td>Network Virtualization</td> </tr>
+ 
+<tr><td colspan=3 valign="left"><strong><a href="Virtualization%20Lab.html">Virtualization Lab</a></strong></td></tr>
+<tr><td><a href="Virtualization%20Lab.html#V.1">V.1</a></td> 
+<td>Your development team wants a separate environment to develop their application.</td>  <td>Zones</td> </tr>
+<tr><td><a href="Virtualization%20Lab.html#V.2">V.2</a></td> 
+<td>You have to install some application packages in the zone and create users.</td>  <td>Inside a Zone</td> </tr>
+<tr><td><a href="Virtualization%20Lab.html#V.3">V.3</a></td> 
+<td>Your development team wants a copy of this environment.</td>  <td>Zone Cloning</td> </tr>
+<tr><td><a href="Virtualization%20Lab.html#V.4">V.4</a></td> 
+<td>Your departments want to know how much resources do they use to pay their fair share for the datacenter infrastructure.</td>  <td>Zone Monitoring</td> </tr>
+<tr><td><a href="Virtualization%20Lab.html#V.5">V.5</a></td> 
+<td>You want to control the zones' resource usage. You want to assign certain amount of processing power to each zone.</td>  <td>Resource Management</td> </tr>
+
+
+
+</table>
+
+
+<h2>Putting It All Together </h2><p>The whole idea of this lab is to show you some Solaris 11 features that 
+can be used to create a cloud infrastructure based on Solaris. You have just created storage pools and filesystems -- think cloud storage. 
+It was fast, it was simple, it was flexible. You have created and cloned Solaris zones with applications within them -- think cloud machine instances. 
+You have monitored and managed zones resources -- think cloud elasticity, metering and chargeback. 
+We didn't discuss in this lab Solaris network virtualization, 
+Solaris security, Solaris package management and many other features 
+which make Solaris 11 truly cloud-oriented operating system. Try and learn 
+more about Solaris 11 features! </p>
+
+<h2>Final Notes</h2>
+
+<p>The virtual appliance we used in this lab is configured to be able to perform zone installation without network access. 
+Namely, we've configured an internal repository with just a small subset of packages necessary for zone installations. 
+If you are going to continue using this appliance with open network access, you will need to change the repository address
+to Oracle's standard Solaris repository.  </p>
+
+<pre>
+root@solaris:~# <kbd>pkg set-publisher -G '*' -M '*' -g http://pkg.oracle.com/solaris/release -P solaris</kbd> 
+</pre>
+
+<h2>Further Oracle Solaris Education</h2>
+
+<p>This Hands-on Lab is just and introduction in Oracle Solaris 11 world. We highly recommend to
+continue your education with Oracle University. There is a full set of new courses covering 
+Oracle Solaris 11: </p>
+
+<ul>
+<li>Transition to Oracle Solaris 11</li>
+<li>What's New in Oracle Solaris 11</li>
+<li>What's New in Oracle Solaris 11 (Self-Study)</li>
+<li>Oracle Solaris 11 System Administration</li>
+<li>Oracle Solaris 11 Advanced System Administration</li>
+
+</ul>
+
+<p>Get more details at the Oracle University page: <a href="http://bit.ly/OracleSolaris11Edu">http://bit.ly/OracleSolaris11Edu</a> .</p>
+
+<p>If you prefer to study Oracle Solaris 11 yourself, there is a book available: <a href="http://www.amazon.com/Oracle-Solaris-Administration-Complete-Reference/dp/007179042X/">Oracle Solaris 11 System Administration The Complete Reference</a> </p>
+<p>Good luck! </p></body>
+</html>
+

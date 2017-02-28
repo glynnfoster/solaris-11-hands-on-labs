@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Repository Management</title>
+<meta name="generator" content="Bluefish 2.2.8" >
+<meta name="author" content="panni" >
+<meta name="date" content="2016-07-06T15:32:15-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2015">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+
+<h1>Oracle Solaris 11 Repository Management</h1>
+
+
+<p>In Oracle Solaris 11 we use Image Packaging System (IPS) to manage software packages. It uses network-based repositories, which is a common way today and also is used by different Linux distributions, for example. From our <a href="IPS Lab.html">IPS Lab</a> you can learn how to work with packages: search, get information, install, uninstall, check and fix them. That lab uses IPS repository which is already installed and configured in our lab environment or is available online at <code>http://pkg.oracle.com</code>. In this lab we will learn how to install and manage you own repository and how to update systems using it. This lab includes the following steps: </p>
+
+<ul>
+<li>Create and install a full Oracle Solaris 11 GA (general availability) repository</li>
+<li>Make this repository available to other systems on the network (enable the repository service)</li>
+<li>Add package updates to the repository (Service Repository Updates, SRU). Check what's available for the next system update.</li>
+<li>Dry-run the system's update. </li>
+<li>Update and reboot the system.</li>
+<li>Create and configure a separate repository for development or testing environment.</li>
+</ul>
+
+<h2>Full Solaris repository</h2>
+
+<p>First, we create a ZFS file system to hold the repository. Note that we create not only the <code>/repo</code> file system, but also the <code>/repo/prod</code> underneath it. We need it because later we want to create separate repositories for production and dev/test environments.  </p>
+
+<pre>
+root@repo-lab1:~# <kbd>zfs create -o mountpoint=/repo -o compress=lz4 rpool/repo</kbd>
+root@repo-lab1:~# <kbd>zfs create -o mountpoint=/repo/prod -o compress=lz4 rpool/repo/prod</kbd>
+</pre>
+
+<p>Then we have to fill this repository. Oracle Solaris 11 repository files are freely available for each of the major updates, i.e., 11.0, 11.1, 11.2, 11.3. You can download them from here: <a href="http://www.oracle.com/technetwork/server-storage/solaris11/downloads/local-repository-2245081.html">http://www.oracle.com/technetwork/server-storage/solaris11/downloads/local-repository-2245081.html</a>. To get repository files for monthly Service Repository Updates (SRU), you need a support contract with Oracle. In our lab system we have already downloaded all the necessary repository archives to a separate directory. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>cd /share1/lifecycle/SRUs/</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs# <kbd>ls -F</kbd>
+11.3.1/  11.3.3/  11.3.5/  11.3.7/  11.3.9/
+11.3.2/  11.3.4/  11.3.6/  11.3.8/
+</pre>
+
+<p>In each of these directories you will find a set of .zip files with their checksums and a script to install them in a repository. The full repository archive is located in 11.3.1.</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs# <kbd>cd 11.3.1</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.1# <kbd>ls</kbd>
+install-repo.ksh                 sol-11_3_1_5_0-repo_4of5.zip
+sol-11_3_1_5_0-repo_1of5.zip     sol-11_3_1_5_0-repo_5of5.zip
+sol-11_3_1_5_0-repo_2of5.zip     sol-11_3_1_5_0-repo_md5sums.txt
+sol-11_3_1_5_0-repo_3of5.zip
+</pre>
+
+<p>As you can see, there is a script called install-repo.ksh. It's easy to guess that it installs the files into an existing repository. Try to run it without arguments and read its help message. </p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.1# <kbd>./install-repo.ksh</kbd>
+USAGE:
+install-repo.ksh -d dest [-s zipsrc] [-i image-name] [-c] [-v] [-I] [-y]
+
+-d dest   = destination directory to hold repository
+-s zipsrc = full path to directory holding zip files. default: current directory
+-i image  = name of image: e.g. sol-11_2-repo. default: name found in directory
+-c        = compare checksums of downloaded zip files
+-v        = verify repo after unzipping (minimum Solaris 11.1.7 required)
+-I        = create an ISO image
+-y        = add to existing repository without prompting for yes or no. Use
+            with caution.
+
+Destination directory will contain top-level ISO files including README.
+Repository is directly under destination.
+ISO image is created in current directory, or zipsrc directory from -s argument.
+</pre>
+
+<p>The easiest way to use this script is right from its directory. You will only need to specify the destination directory where your repository is located. Also it is a good idea to compare checksums of the downloaded files to those in the <code>sol-...md5sums.txt</code> file--we'll use the '<code>-c</code>' flag for that. Let's start the installation: </p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.1# ./install-repo.ksh -c -d /repo/prod
+Using sol-11_3_1_5_0-repo download.
+
+Comparing checksums of downloaded files...done. Checksums match.
+
+Uncompressing sol-11_3_1_5_0-repo_1of5.zip...done.
+Uncompressing sol-11_3_1_5_0-repo_2of5.zip...done.
+Uncompressing sol-11_3_1_5_0-repo_3of5.zip...done.
+Uncompressing sol-11_3_1_5_0-repo_4of5.zip...done.
+Uncompressing sol-11_3_1_5_0-repo_5of5.zip...
+Repository can be found in /repo/prod.
+</pre>
+
+<p>OK, now we can check our work and get some information about the repository we've just installed.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkgrepo info -s /repo/prod</kbd>
+PUBLISHER PACKAGES STATUS           UPDATED
+solaris   5477     online           2015-10-06T19:45:07.360815Z
+root@repo-lab1:~# <kbd>pkgrepo list -s /repo/prod</kbd>
+Retrieving catalog 1/1 solaris
+. . . . . (long list of packages)
+root@repo-lab1:~# <kbd>pkgrepo list -s /repo/prod entire</kbd>
+PUBLISHER NAME                                          O VERSION
+solaris   entire                                          0.5.11,5.11-0.175.3.1.0.5.0:20151006T140051Z
+</pre>
+
+<p>We have only one 'entire' package and it's version is 11.3.1, i.e. the first published Solaris 11.3 version. </p>
+
+<h2>New Solaris publisher</h2>
+
+<p>In freshly installed Solaris the publisher is configured to its default location: <code>http://pkg.oracle.com</code>. In most cases your servers won't have direct access to that server so you'll want to use your own internal repository. Let's reconfigure our packaging system to use the repository we've just installed. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg publisher</kbd>
+PUBLISHER                   TYPE     STATUS P LOCATION
+solaris                     origin   online F https://pkg.oracle.com/solaris/support/
+root@repo-lab1:~# <kbd>pkg set-publisher -G '*' -M '*' -g file:///repo/prod solaris</kbd>
+root@repo-lab1:~# <kbd>pkg publisher</kbd>
+PUBLISHER                   TYPE     STATUS P LOCATION
+solaris                     origin   online F file:///repo/prod/
+</pre>
+
+<p>Well, we have changed the publisher's location to own internal repository. As you can see, its URL is file-based. That means it is only available on this particular server, where we have installed the repository. We'll learn later how to make it available to other servers in the network. So far, check if you can list the packages and install one of them.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg list -a | wc -l</kbd>
+    3156
+root@repo-lab1:~# <kbd>pkg install iperf</kbd>
+           Packages to install:  1
+       Create boot environment: No
+Create backup boot environment: No
+
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                                1/1           6/6      0.1/0.1    0B/s
+
+PHASE                                          ITEMS
+Installing new actions                         26/26
+Updating package state database                 Done
+Updating package cache                           0/0
+Updating image state                            Done
+Creating fast lookup database                   Done
+Updating package cache                           1/1
+</pre>
+
+<p>It works! We can list and find packages, we can install packages. Now let's make sure this repository is available to other servers in the network.</p>
+
+<h2>Package repository service</h2>
+
+<pre>
+root@repo-lab1:~# <kbd>svccfg -s application/pkg/server setprop pkg/inst_root=/repo/prod </kbd>
+root@repo-lab1:~# <kbd>svcadm refresh application/pkg/server</kbd>
+root@repo-lab1:~# <kbd>svcadm enable application/pkg/server</kbd>
+root@repo-lab1:~# <kbd>svcs application/pkg/server</kbd>
+STATE          STIME    FMRI
+online         16:53:44 svc:/application/pkg/server:default
+</pre>
+
+<p>And now you can reconfigure your packaging system to point to your server, instead of the file-based URL. Start with finding out your own IP address and then change the publisher to that address. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>ipadm</kbd>
+NAME              CLASS/TYPE STATE        UNDER      ADDR
+lo0               loopback   ok           --         --
+   lo0/v4         static     ok           --         127.0.0.1/8
+   lo0/v6         static     ok           --         ::1/128
+net0              ip         ok           --         --
+   net0/v4        static     ok           --         <b>10.80.10.4</b>/23
+   net0/v6        addrconf   ok           --         fe80::214:4fff:fef8:dce6/10
+   net0/v6        addrconf   ok           --         2606:b400:410:831:214:4fff:fef8:dce6/64
+net1              ip         ok           --         --
+   net1/v4        static     ok           --         192.168.222.31/24
+root@repo-lab1:~# <kbd>pkg set-publisher -G '*' -M '*' -g http://10.80.10.4/ solaris</kbd>
+</pre>
+
+<p>Does <code>pkg(1)</code> command work with the new publisher?</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg list -a | wc -l</kbd>
+    3156
+</pre>
+
+<p>Good! We didn't lose a single package! If you have another system available in the same network, try to reconfigure its publisher too, pointing to your system's IP and check if you can install packages. If you are working in teams, as a courtesy to your fellow teams, reconfigure your IPS to point to <i>their</i> repository and check if you can install packages (of course, after they have installed and configured their repository). </p>
+
+<h2>Service Repository Updates</h2>
+
+<p>Once a month Oracle issues so called Service Repository Updates (SRUs) for Solaris 11. It is recommended that you download and install ALL published SRUs in your repository. Even if you are not going to update your servers with each SRU, it's better to have them all installed in the repository, without gaps. </p>
+
+<p>SRUs are available via My Oracle Support site (<code>https://support.oracle.com</code>). You can check MOS Document ID 2045311.1 called "Oracle Solaris 11.3 Support Repository Updates (SRU) Index". In our lab we have downloaded all SRUs that are available for Solaris 11.3. They are located in <code>/share1/lifecycle/SRUs</code>. Enter the 11.3.2 (SRU 2) directory and see what's inside.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>cd /share1/lifecycle/SRUs</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs# <kbd>ls -F</kbd>
+11.3.1/  11.3.3/  11.3.5/  11.3.7/  11.3.9/
+11.3.2/  11.3.4/  11.3.6/  11.3.8/
+root@repo-lab1:/share1/lifecycle/SRUs# cd <kbd>11.3.2</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>ls -lh</kbd>
+total 4105549
+-rwxr--r--   1 nobody   nobody       11K Nov 11  2015 install-repo.ksh
+-rw-r--r--   1 nobody   nobody        63 Nov 11  2015 sol-11_3_2_4_0-incr-repo_md5sums.txt
+-rw-r--r--   1 nobody   nobody      2.0G Nov 11  2015 sol-11_3_2_4_0-incr-repo.zip
+</pre>
+
+<p>As you can see, there is only one <code>.zip</code> file in the directory. You can compare that with SRU 9, which is the latest at the moment of writing:</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>ls -lh ../11.3.9</kbd>
+total 8069746
+-rwxr--r--   1 nobody   nobody       11K Jun 10 13:46 install-repo.ksh
+-rw-r--r--   1 nobody   nobody      1.3G Jun 10 13:46 sol-11_3_9_4_0-incr-repo_1of3.zip
+-rw-r--r--   1 nobody   nobody      1.5G Jun 10 13:46 sol-11_3_9_4_0-incr-repo_2of3.zip
+-rw-r--r--   1 nobody   nobody      1.0G Jun 10 13:46 sol-11_3_9_4_0-incr-repo_3of3.zip
+-rw-r--r--   1 nobody   nobody       204 Jun 10 13:46 sol-11_3_9_4_0-incr-repo_md5sums.txt
+</pre>
+
+<p>In SRU 9 there are three .zip files and they contain all package updates for 11.3. So you can update your servers directly from 11.3.1 to 11.3.9 and it will include all updated packages. But still, in the repository you'd better keep all SRUs without gaps. </p>
+
+<p>Now we can install SRU 2 in the repository. It's considered best practice to create a snapshot of the existing repository before installing the next SRU. Let's follow this advice. In case of failure during the installation we can always roll back to the previous clean version.</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# zfs snapshot rpool/repo/prod@11.3.1
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# zfs list -r -t all rpool/repo/prod
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+rpool/repo/prod         8.18G  80.4G  8.18G  /repo/prod
+rpool/repo/prod@11.3.1      0      -  8.18G  -
+</pre>
+
+<p>Make sure you are still in the '<code>11.3.2</code>' directory and run the installation script.</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>./install-repo.ksh -d /repo/prod -c</kbd>
+Using sol-11_3_2_4_0-incr-repo download.
+IPS repository exists at destination /repo/prod
+Current version: 0.175.3.1.0.5.0
+Do you want to add to this repository? (y/n)[n]: <kbd>y</kbd>
+
+Comparing checksums of downloaded files...done. Checksums match.
+
+Uncompressing sol-11_3_2_4_0-incr-repo.zip...done.
+Repository can be found in /repo/prod.
+Initiating repository rebuild.
+</pre>
+
+<p>The repository rebuild process may take several minutes, so please be patient.</p>
+
+<p>Now refresh the repository service and check what updates are available to you. </p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>pkg refresh</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>pkg list -af  entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     i--
+</pre>
+
+<p>As you can see, we have two SRUs available and one of them, namely 11.3.1, is installed (note the letter '<code>i</code>' in the rightmost column). </p>
+
+<p>If you have time, you can practice and install more SRUs from the respective directories. Just don't forget to take snapshots before updating the repository with each new SRU.</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>zfs snap rpool/repo/prod@11.3.2</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>zfs list -r -t all rpool/repo/pro</kbd>
+d
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+rpool/repo/prod         10.4G  78.2G  10.1G  /repo/prod
+rpool/repo/prod@11.3.1   298M      -  8.18G  -
+rpool/repo/prod@11.3.2      0      -  10.1G  -
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.2# <kbd>cd ../11.3.3</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.3# <kbd>./install-repo.ksh -d /repo/prod -c</kbd>
+Using sol-11_3_3_6_0-incr-repo download.
+IPS repository exists at destination /repo/prod
+Current version: 0.175.3.2.0.4.0
+Do you want to add to this repository? (y/n)[n]: <kbd>y</kbd>
+
+Comparing checksums of downloaded files...done. Checksums match.
+
+Uncompressing sol-11_3_3_6_0-incr-repo_1of2.zip...done.
+Uncompressing sol-11_3_3_6_0-incr-repo_2of2.zip...done.
+Repository can be found in /repo/prod.
+Initiating repository rebuild.
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.3# <kbd>pkg list -af  entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     i--
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.3# <kbd>pkg refresh</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.3# <kbd>pkg list -af  entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.3.0.6.0     ---
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     i--
+</pre>
+
+<h2>Server Updates</h2>
+
+<p>We have updated the repository and now we are ready to update the server. First, we have to figure our current version. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg info entire | grep Version</kbd>
+       Version: 0.5.11 (Oracle Solaris 11.3.1.5.0)
+</pre>
+
+<p>OK, it's 11.3.1 (as expected). What versions are available in the repository?</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg list -af entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.3.0.6.0     ---
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     i--
+</pre>
+
+<p>In the command above we use the flags '<code>-af</code>' to specify that we want to see not only installed packages, but also packages from the repository (<code>-a</code>) and not only those that can be installed in <i>this</i> image, but all available versions (<code>-f</code>). </p>
+
+<p>So we have three SRUs available in the repository. One of them is installed currently (11.3.1) and two others are available to update the server. Before actually updating the server, let's do dry-run first and see what changes are going to be made. </p>
+
+<pre>
+root@repo-lab1:~# pkg update -n
+           Packages to install:   1
+            Packages to update: 131
+       Create boot environment: Yes
+Create backup boot environment:  No
+</pre>
+
+<p>That's OK, but we might need more information before the update. Like how much space will the update take, which package versions will be installed, etc. Let's run the same command with more verbose output.  </p>
+
+<pre>
+root@repo-lab1:~# pkg update -nv
+           Packages to install:        1
+            Packages to update:      131
+     Estimated space available: 75.72 GB
+Estimated space to be consumed:  1.54 GB
+       Create boot environment:      Yes
+     Activate boot environment:      Yes
+Create backup boot environment:       No
+          Rebuild boot archive:      Yes
+
+Changed packages:
+solaris
+  x11/session/xauth
+    None -> 1.0.7,5.11-0.175.3.0.0.30.1483:20150821T173742Z
+  consolidation/X/X-incorporation
+    0.5.11,5.11-0.175.3.1.0.2.1489:20150921T191842Z -> 0.5.11,5.11-0.175.3.2.0.2.1493:20151020T015528Z
+. . . . . . . (long list of package changes) . . . 
+  entire
+    0.5.11,5.11-0.175.3.1.0.5.0:20151006T140051Z -> 0.5.11,5.11-0.175.3.3.0.6.0:20151213T201320Z
+. . . . . . . (long list of package changes) . . . 
+Editable files to change:
+  Install:
+    etc/ssm/hmp/host_profile.xml
+  Update:
+    etc/motd
+    var/log/ssm/event.log
+    var/log/ssm/fwupdate.log
+    var/log/ssm/hwmgmtcli.log
+    var/log/ssm/hwmgmtd.log
+    var/log/ssm/raidconfig.log
+
+</pre>
+
+<p>This looks more specific. We can see from this list that we are going to update our 11.3.1 system to 11.3.3, that it's going to take 1.54 GB of extra space and that this process will create and activate a new boot environment for us. So now we have collected enough information and decided that we want to update. Just one more thing: we want to give a name our new boot environment. By default it will be named 'solaris-1', the next one will be 'solaris-2', etc. It might be good to give it some meaningful name, like 'solaris-11.3.3'. Here is the command for actual update:</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg update --be-name solaris-11.3.3</kbd>
+           Packages to install:   1
+            Packages to update: 131
+       Create boot environment: Yes
+Create backup boot environment:  No
+
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                            132/132     4665/4665  320.0/320.0 13.6M/s
+
+PHASE                                          ITEMS
+Removing old actions                         817/817
+Installing new actions                     1153/1153
+Updating modified actions                  4707/4707
+Updating package state database                 Done
+Updating package cache                       131/131
+Updating image state                            Done
+Creating fast lookup database                   Done
+Updating package cache                           1/1
+
+A clone of solaris exists and has been updated and activated.
+On the next boot the Boot Environment solaris-11.3.3 will be
+mounted on '/'.  Reboot when ready to switch to this updated BE.
+
+Updating package cache                           1/1
+
+---------------------------------------------------------------------------
+NOTE: Please review release notes posted at:
+
+http://www.oracle.com/pls/topic/lookup?ctx=solaris11&id=SERNS
+---------------------------------------------------------------------------
+
+</pre>
+
+<p>It looks good. Now we can check if it really has created a new boot environment and reboot into it.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>beadm list</kbd>
+BE             Flags Mountpoint Space  Policy Created
+--             ----- ---------- -----  ------ -------
+solaris        N     /          230.0K static 2016-06-28 11:12
+solaris-11.3.3 R     -          5.76G  static 2016-06-29 11:43
+root@repo-lab1:~# <kbd>reboot</kbd>
+Jun 29 11:46:59 repo-lab1 reboot: initiated by lab on /dev/console
+. . . . . 
+</pre>
+
+<p>Your session will be closed and you'll have to wait for a couple of minutes to reconnect back. Connect to your system again and check its version.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg info entire | grep Version</kbd>
+       Version: 0.5.11 (Oracle Solaris 11.3.3.6.0)
+root@repo-lab1:~# <kbd>beadm list</kbd>
+BE             Flags Mountpoint Space  Policy Created
+--             ----- ---------- -----  ------ -------
+solaris        -     -          92.01M static 2016-06-28 11:12
+solaris-11.3.3 NR    /          5.89G  static 2016-06-29 11:43
+</pre>
+
+<p>Everything looks good. We have just updated our system to the latest version available in the repository. For consistency you might want to rename the original boot environment to solaris-11.3.1.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>beadm rename solaris solaris-11.3.1</kbd>
+root@repo-lab1:~# <kbd>beadm list</kbd>
+BE             Flags Mountpoint Space  Policy Created
+--             ----- ---------- -----  ------ -------
+solaris-11.3.1 -     -          92.01M static 2016-06-28 11:12
+solaris-11.3.3 NR    /          5.89G  static 2016-06-29 11:43
+</pre>
+
+<p>The good thing about this update is that you can always go back to any of your previous installed Solaris versions. </p>
+
+<p>What if we want to update not to the latest SRU, but to an earlier one? Let's get back to 11.3.1 and try to update it to 11.3.2 instead of 11.3.3.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>beadm activate solaris-11.3.1</kbd>
+root@repo-lab1:~# <kbd>reboot</kbd>
+Jun 29 12:11:49 repo-lab1 reboot: initiated by lab on /dev/console
+syncing file systems... done
+rebooting...
+</pre>
+
+<p>Login back to your system after reboot. If we want to update not to the latest SRU, but to an earlier one, we have to specify its exact name. To get it from the repository, use the extra '<kbd>-v</kbd>' flag in the command. </p>
+
+
+<pre>
+root@repo-lab1:~# pkg list -afv entire
+FMRI                                                                         IFO
+pkg://solaris/entire@0.5.11,5.11-0.175.3.3.0.6.0:20151213T201320Z            ---
+pkg://solaris/entire@0.5.11,5.11-0.175.3.2.0.4.0:20151103T235040Z            ---
+pkg://solaris/entire@0.5.11,5.11-0.175.3.1.0.5.0:20151006T140051Z            i--
+</pre>
+
+<p>Now you can tell the <code>pkg(1)</code> command which particular version you want to install.  </p>
+
+<pre>
+root@repo-lab1:~# pkg update --be-name solaris-11.3.2 pkg://solaris/entire@0.5.11,5.11-0.175.3.2.0.4.0
+           Packages to install:   1
+            Packages to update:  95
+       Create boot environment: Yes
+Create backup boot environment:  No
+
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                              96/96     3436/3436  264.6/264.6 13.6M/s
+
+PHASE                                          ITEMS
+Removing old actions                         586/586
+Installing new actions                       862/862
+Updating modified actions                  3469/3469
+Updating package state database                 Done
+Updating package cache                         95/95
+Updating image state                            Done
+Creating fast lookup database                   Done
+Updating package cache                           1/1
+
+A clone of solaris-11.3.1 exists and has been updated and activated.
+On the next boot the Boot Environment solaris-11.3.2 will be
+mounted on '/'.  Reboot when ready to switch to this updated BE.
+
+Updating package cache                           1/1
+root@repo-lab1:~# reboot
+Jun 29 12:47:14 repo-lab1 reboot: initiated by lab on /dev/console
+syncing file systems... done
+rebooting...
+Resetting...
+</pre>
+
+<p>In the command above you can use the full line of package specification (FMRI) or just a part of it, as long as it specifies the SRU version you need, for example, <code>entire@0.5.11,5.11-0.175.3.2</code>.</p>
+
+
+<h2>System Update Tips</h2>
+
+<p>Let's get back to the 11.3.2 installation and perform update to 11.3.3 again. First, remove the BE which contains 11.3.3 SRU and update the system again. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>beadm destroy solaris-11.3.3</kbd>
+Are you sure you want to destroy solaris-11.3.3?  This action cannot be undone(y/[n]): <kbd>y</kbd>
+root@repo-lab1:~# <kbd>beadm list</kbd>
+BE             Flags Mountpoint Space Policy Created
+--             ----- ---------- ----- ------ -------
+solaris-11.3.1 -     -          7.88M static 2016-06-28 11:12
+solaris-11.3.2 NR    /          5.83G static 2016-06-29 13:01
+root@repo-lab1:~# <kbd>pkg update --be-name solaris-11.3.3</kbd>
+</pre>
+
+<p>We have created and updated a new boot environment, but haven't rebooted in it yet. What's going to happen if we make any changes to the system now? Most likely, they will be lost, because we reboot into the new boot environment. Let's check this guess. </p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg install mtr</kbd>
+WARNING: The boot environment being modified is not the active one.  Changes
+made will not be reflected on the next boot.
+. . . . (package installation messages) . . . . 
+
+root@repo-lab1:~# <kbd>echo '10.80.11.34     SCT4-2R-BRM-01' >> /etc/hosts</kbd>
+root@repo-lab1:~# <kbd>cat /etc/hosts</kbd>
+cat /etc/hosts
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Internet host table
+#
+::1             localhost
+127.0.0.1       localhost loghost
+10.80.10.4      repo-lab1
+192.168.222.4   SC7410B
+10.80.11.34     SCT4-2R-BRM-01
+
+</pre>
+
+<p>So we made some changes: installed a package and changed <code>/etc/hosts/</code> file. As you can see, the <code>pkg(1)</code> command warns us that the changes may be lost because we are changing the current boot environment, not the one that will be active after reboot. Now reboot the system, login again and check if it's true.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>cat /etc/hosts</kbd>
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Internet host table
+#
+::1             localhost
+127.0.0.1       localhost loghost
+10.80.10.4      repo-lab1
+192.168.222.4   SC7410B
+root@repo-lab1:~# <kbd>mtr</kbd>
+-bash: mtr: command not found
+</pre>
+
+<p>We were right: changes made to the current boot environment are not transferred to the new boot environment. Keep this in mind when planning your system updates. In other words, it's not a good idea to perform a system update on Tuesday and reboot your system only on Sunday. Most likely you'll make some changes during the week that you want to preserve.</p>
+
+<h2>Different Repositories</h2>
+
+<p>In the beginning of this lab we mentioned that it's a good practice to keep separate repositories for production, development, and testing environments. Here is how to implement it. </p>
+
+<p>We have already created our "production" repository and updated it up to 11.3.3. Now let's create a "development" repository which will contain higher SRUs. Here is the plan:</p>
+
+<ul>
+<li>Create a ZFS clone of the production repository file system</li>
+<li>Update that new repository to 11.3.4 (and higher)</li>
+<li>Make this repository available via different port</li>
+<li>Configure the Apache web server to make the repository available via different URL</li>
+</ul>
+
+<p>First, let's see what we've got in the repository file system.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>zfs list -r -t all rpool/repo</kbd>
+NAME                     USED  AVAIL  REFER  MOUNTPOINT
+rpool/repo              12.8G  73.4G    32K  /repo
+rpool/repo/prod         12.8G  73.4G  10.8G  /repo/prod
+rpool/repo/prod@11.3.1   298M      -  8.18G  -
+rpool/repo/prod@11.3.2  1.69G      -  10.1G  -
+</pre>
+
+<p>To create a clone of the latest repository, make a snapshot and then create a clone file system.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>zfs snapshot rpool/repo/prod@11.3.3</kbd>
+root@repo-lab1:~# <kbd>zfs clone rpool/repo/prod@11.3.3 rpool/repo/dev</kbd>
+root@repo-lab1:~# <kbd>ls /repo</kbd>
+dev   prod
+root@repo-lab1:~# <kbd>ls /repo/dev</kbd>
+COPYRIGHT            pkg5.repository      README-repo-iso.txt
+NOTICES              publisher            readme.txt
+root@repo-lab1:~# <kbd>pkgrepo info -s /repo/prod</kbd>
+PUBLISHER PACKAGES STATUS           UPDATED
+solaris   5537     online           2016-06-28T21:57:47.710361Z
+root@repo-lab1:~# <kbd>pkgrepo info -s /repo/dev</kbd>
+PUBLISHER PACKAGES STATUS           UPDATED
+solaris   5537     online           2016-06-28T21:57:47.710361Z
+</pre>
+
+<p>Now go to the SRUs directory and install the next SRU, but now in the development repository.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>cd /share1/lifecycle/SRUs</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs# <kbd>cd 11.3.4</kbd>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.4# <kbd>./install-repo.ksh -d /repo/dev -c</kbd>
+Using sol-11_3_4_5_0-incr-repo download.
+IPS repository exists at destination /repo/dev
+Current version: 0.175.3.3.0.6.0
+Do you want to add to this repository? (y/n)[n]: y
+
+Comparing checksums of downloaded files...done. Checksums match.
+
+Uncompressing sol-11_3_4_5_0-incr-repo_1of2.zip...done.
+Uncompressing sol-11_3_4_5_0-incr-repo_2of2.zip...done.
+Repository can be found in /repo/dev.
+Initiating repository rebuild.
+</pre>
+
+<p>Now let's see what we've got in both repositories. There is a special flag '<code>-g</code>' in <code>pkg(1)</code> command to query a specific repository location.</p>
+
+<pre>
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.4# <kbd>pkg list -af -g /repo/prod entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.3.0.6.0     i--
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     ---
+root@repo-lab1:/share1/lifecycle/SRUs/11.3.4# <kbd>pkg list -af -g /repo/dev entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.4.0.5.0     ---
+entire                                            0.5.11-0.175.3.3.0.6.0     i--
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     ---
+</pre>
+
+<p>This is exactly what we wanted: SRUs up to 11.3.3 are installed in the production repository and SRUs up to 11.3.4 are in the development repository. Now we have to make it available to other systems on the network. We will create another instance of the <code>application/pkg/server</code> service and configure a different port in it.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>svcs pkg/server</kbd>
+STATE          STIME    FMRI
+online         14:31:53 svc:/application/pkg/server:default
+root@repo-lab1:~# <kbd>svccfg -s pkg/server add dev</kbd>
+root@repo-lab1:~# <kbd>svccfg -s pkg/server list</kbd>
+:properties
+default
+dev
+root@repo-lab1:~# <kbd>svccfg -s pkg/server:dev setprop pkg/inst_root=/repo/dev</kbd>
+root@repo-lab1:~# <kbd>svccfg -s pkg/server:dev setprop pkg/port=82</kbd>
+root@repo-lab1:~# <kbd>svcadm enable pkg/server:dev</kbd>
+root@repo-lab1:~# <kbd>svcs pkg/server</kbd>
+STATE          STIME    FMRI
+online         14:31:53 svc:/application/pkg/server:default
+online         17:20:33 svc:/application/pkg/server:dev
+
+</pre>
+
+<p>Now to access this repository we have to use port 82 (instead of the default port 80). We can list it using the flag '<code>-g</code>'.  </p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg list -af -g http://10.80.10.4:82 entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.4.0.5.0     ---
+entire                                            0.5.11-0.175.3.3.0.6.0     i--
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     ---
+</pre>
+
+<p>So now on your development systems you have to set publisher to http://10.80.10.4:82 (replace this address with the actual IP or domain name of your repository server) and they will be updated to a couple SRUs ahead of production servers.  </p>
+
+<h2>Apache Web Server Proxy Configuration</h2>
+
+<p>Sometimes it helps to have meaningful names for different repositories instead of just port numbers. You don't want to recall every time: "was is port 82 for development and port 83 for testing? or vice versa?". It would be easier to have repository URLs like this: <code>http://solaris-repo.example.com/prod</code> or <code>http://solaris-repo.example.com/dev</code>. To achieve this we need help from Apache web server.  </p>
+
+<p>First check if the Apache package is installed on your system.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg list '*apache*'</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+web/server/apache-22                              2.2.31-0.175.3.1.0.3.0     i--
+web/server/apache-22/module/apache-wsgi-26        4.3.0-0.175.3.0.0.30.0     i--
+web/server/apache-22/module/apache-wsgi-27        4.3.0-0.175.3.0.0.30.0     i--
+</pre>
+
+<p>Before starting Apache we have to make some changes in our current default package server configuration. By default it uses port 80, which is also the default for Apache. To avoid the conflict we'll move package server to port 81. Don't forget to change your publisher configuration after that!</p>
+
+<pre>
+root@repo-lab1:~# <kbd>svccfg -s pkg/server:default setprop pkg/port=81</kbd>
+root@repo-lab1:~# <kbd>svcadm refresh pkg/server:default</kbd>
+root@repo-lab1:~# <kbd>svcadm restart pkg/server:default</kbd>
+root@repo-lab1:~# <kbd>pkg set-publisher -G '*' -g http://10.80.10.4:81/ solaris</kbd>
+</pre>
+
+<p>Now we have to add a couple lines to the Apache configuration file <code>httpd.conf</code>. By default it is located at <code>/etc/apache2/2.2/</code>. Open it with your favorite editor and add the following lines at the very end of this file.</p>
+
+<pre>
+# Added for IPS Repository lab
+ProxyPass /prod http://10.80.10.4:81 nocanon
+ProxyPass /dev  http://10.80.10.4:82 nocanon
+</pre>
+
+<p>And then refresh and restart the Apache web server:</p>
+
+<pre>
+root@repo-lab1:~# <kbd>svcadm refresh apache22</kbd>
+root@repo-lab1:~# <kbd>svcadm restart apache22</kbd>
+</pre>
+
+<p>Now you should be able to access both repositories via more meaningful names.</p>
+
+<pre>
+root@repo-lab1:~# <kbd>pkg refresh</kbd>
+root@repo-lab1:~# <kbd>pkg list -af -g http://10.80.10.4/prod entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.3.0.6.0     i--
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     ---
+root@repo-lab1:~# <kbd>pkg list -af -g http://10.80.10.4/dev entire</kbd>
+NAME (PUBLISHER)                                  VERSION                    IFO
+entire                                            0.5.11-0.175.3.4.0.5.0     ---
+entire                                            0.5.11-0.175.3.3.0.6.0     i--
+entire                                            0.5.11-0.175.3.2.0.4.0     ---
+entire                                            0.5.11-0.175.3.1.0.5.0     ---
+</pre>
+
+
+
+</body>
+
+</html>

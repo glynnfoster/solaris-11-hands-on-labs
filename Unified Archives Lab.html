@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Lab: Unified Archives</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel" >
+<meta name="date" content="2015-06-30T11:50:32-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2014">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+<h1>Oracle Solaris 11 Unified Archives</h1>
+
+<h2>Exercise U.1: Cloning Zones with Unified Archives</h2>
+
+<p><strong>Task:</strong> You have created, configured and installed a zone with a number of packages and services. You want to clone this environment for testing or scalability purposes.</p>
+
+<p><strong>Lab:</strong> In this lab we will create an archive of an installed zone, then use that archive to create another zone. We will learn how to customize zone parameters using zone templates.</p>
+
+<p>We will begin with creating and installing a new zone. </p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z zone1 </kbd>
+Use 'create' to begin configuring a new zone.
+zonecfg:zone1> <kbd>create </kbd>
+create: Using system default template 'SYSdefault'
+zonecfg:zone1> <kbd>set zonepath=/zones/%{zonename}</kbd>  <em>(note the template %{zonename} - we need it for cloning)</em>
+zonecfg:zone1> <kbd>exit</kbd>
+root@solaris:~# <kbd>zoneadm -z zone1 install</kbd>
+The following ZFS file system(s) have been created:
+    rpool/zones/zone1
+. . .
+
+</pre>
+
+<p>After it's done, boot the zone (<kbd>zoneadm -z zone1 boot</kbd>), login into it (<kbd>zlogin -C zone1</kbd>) and configure it as a web server. At the first boot you'll have to go through the profile configuration steps (use the usual parameters: <code>lab/oracle1</code> and IP address from the range <code>10.0.2.21-10.0.2.30</code>).</p>
+
+<pre>
+root@zone1: pkg install apache-22
+svcadm enable apache22
+vi /var/apache2/2.2/htdocs/index.html <em>(customize the file with something like "My Web Server")</em>
+</pre>
+
+<p>Now you can test if your web server is up and running. Use Firefox in the global zone to access your zone's IP address. If everything works as expected you should see "My Web Server" on the screen.</p>
+
+<p>Now we are going to use this zone as a template and clone it to create the second zone. In this lab instead of zone cloning (like we did in the Virtualization Lab) we will use Unified Archives. </p>
+
+<p>As soon as we are satisfied with the zone configuration, we can prepare its archive: </p>
+
+<pre>
+root@solaris:~# <kbd>archiveadm create  -z zone1 --exclude-media /archive/zone1.uar</kbd>
+nitializing Unified Archive creation resources...
+Unified Archive initialized: /archive/zone1.uar
+Logging to: /system/volatile/archive_log.11215
+Executing dataset discovery...
+Dataset discovery complete
+Preparing archive system image...
+Beginning archive stream creation...
+Archive stream creation complete
+Beginning final archive assembly...
+Archive creation complete
+</pre>
+
+<p>We use <code>-z</code> to specify which zone (or zones) we want to archive. We don't want to create bootable media now, so we exclude this option. We use /archive file system here that we have created from the existing disks (<kbd>zpool create archive c1t{4..15}d0</kbd>). You may use any other place in your file system, just make sure you have enough space available (500-700M should be enough).</p>
+
+<p>Take a note that unlike with zone cloning we didn't have to stop the zone to clone it. We have just created an archive from a running zone. Now let's see what information we can get from a Unified Archive. </p>
+
+<pre>
+root@solaris:~# <kbd>archiveadm info /archive/zone1.uar </kbd>
+Archive Information
+          Creation Time:  2014-10-30T21:54:01Z
+            Source Host:  solaris
+           Architecture:  i386
+       Operating System:  Oracle Solaris 11.2 X86
+      Deployable Systems: zone1
+</pre>
+
+<p>If you want a bit more details, use <code>-v</code>:</p>
+
+<pre>
+root@solaris:~# <kbd>archiveadm info -v /archive/zone1.uar </kbd>
+Archive Information
+          Creation Time:  2014-10-30T21:54:01Z
+            Source Host:  solaris
+           Architecture:  i386
+       Operating System:  Oracle Solaris 11.2 X86
+       Recovery Archive:  No
+              Unique ID:  84d8e492-b2f0-ed2c-e541-e2901533bd01
+        Archive Version:  1.0
+
+Deployable Systems
+           'zone1'
+             OS Version:  0.5.11
+              OS Branch:  0.175.2.3.0.4.2
+              Active BE:  solaris
+                  Brand:  solaris
+            Size Needed:  775MB
+              Unique ID:  a0707fc9-1792-4d08-c242-ea19eaaa307d
+              Root-only:  Yes
+</pre>
+
+<p>The archive file is not very big:</p>
+
+<pre>
+root@solaris:~# <kbd>ls -lh /archive/zone1.uar</kbd> 
+-rw-r--r--   1 root     root        376M Oct 30 18:02 /archive/zone1.uar
+</pre>
+
+<p>It's significantly smaller than the zone itself: </p>
+
+<pre>
+root@solaris:~# <kbd>du -sh /zones/zone1</kbd>
+ 1.1G	/zones/zone1
+</pre>
+
+<p>Now imagine you want to clone this web server zone either on this or on another host. That's easy: move the archive file to another system or use shared storage mounted on both systems. Then perform the same zone installation steps, but using this archive file as a source. </p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z zone2 create -a /archive/zone1.uar </kbd>
+root@solaris:~# <kbd>zonecfg -z zone2 info zonepath</kbd>
+zonepath: /zones/zone2
+</pre>
+
+<p>Take a note that <code>zonepath</code> is set to the correct value: <code>/zones/zone2</code>. This is possible because we used template formatting (<code>%{zonename}</code>) when creating the original zone. Consider it best practice when configuring zones: in case you want to clone them in the future it can save you an additional configuration step.</p>
+
+<p>Now install the new zone, again using the archive file as a source.</p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z zone2 install -a /archive/zone1.uar</kbd> 
+The following ZFS file system(s) have been created:
+    rpool/zones/zone2
+Progress being logged to /var/log/zones/zoneadm.20141031T153247Z.zone2.install
+    Installing: This may take several minutes...
+ Install Log: /system/volatile/install.17849/install_log
+ AI Manifest: /tmp/manifest.zone2.f.aq1I.xml
+    Zonename: zone2
+Installation: Starting ...
+
+        Commencing transfer of stream: a0707fc9-1792-4d08-c242-ea19eaaa307d-0.zfs to rpool/zones/zone2/rpool
+        Completed transfer of stream: 'a0707fc9-1792-4d08-c242-ea19eaaa307d-0.zfs' from file:///archive/zone1.uar
+        Archive transfer completed
+Installation: Succeeded
+      Zone BE root dataset: rpool/zones/zone2/rpool/ROOT/solaris
+                     Cache: Using /var/pkg/publisher.
+Updating image format
+Image format already current.
+  Updating non-global zone: Linking to image /.
+Processing linked: 1/1 done
+  Updating non-global zone: Syncing packages.
+No updates necessary for this image. (zone:zone2)
+
+  Updating non-global zone: Zone updated.
+                    Result: Attach Succeeded.
+
+        Done: Installation completed in 216.035 seconds.
+  Next Steps: Boot the zone, then log into the zone console (zlogin -C)
+              to complete the configuration process.
+Log saved in non-global zone as /zones/zone2/root/var/log/zones/zoneadm.20141031T153247Z.zone2.install
+</pre>
+
+<p>It took much less time to clone the zone than to install it from scratch--this is good news. Now let's boot the zone, login and see what is there.</p>
+
+<pre>
+root@solaris:~# zoneadm -z zone2 boot
+root@solaris:~# zlogin -C zone2
+[Connected to zone 'zone2' console]
+</pre>
+
+<p>After that message you will see the usual sequence of screens where you configure hostname, time zones, passwords. IP address and things like that. What does it mean for us? It means that the cloned zone came out in "unconfigured" state, it didn't preserve the source's identity. Can we configure the clone zone before installation? Of course! We just have to use '<code>sysconfig create-profile</code>' as it was demonstrated in Virtualization Lab. More about that later.</p>
+
+<p>After configuration is done, we can login into the zone. </p>
+
+<pre>
+zone2 console login: <kbd>lab</kbd>
+Password: <kbd>oracle1</kbd>
+Last login: Fri Oct 31 12:12:16 on console
+Oracle Corporation      SunOS 5.11      11.2    June 2014
+lab@zone2:~$ <kbd>su -</kbd>
+Password: <kbd>solaris1</kbd>
+Oct 31 14:10:38 zone2 su: 'su root' succeeded for lab on /dev/console
+Oracle Corporation      SunOS 5.11      11.2    June 2014
+</pre>
+
+<p>Was our Apache installation preserved?</p>
+
+<pre>
+root@zone2:~# <kbd>pkg info apache-22</kbd>
+          Name: web/server/apache-22
+       Summary: Apache Web Server V2.2
+   Description: The Apache HTTP Server Version 2.2
+      Category: Web Services/Application and Web Servers
+         State: Installed
+     Publisher: solaris
+       Version: 2.2.27
+ Build Release: 5.11
+        Branch: 0.175.2.0.0.42.1
+Packaging Date: Mon Jun 23 02:28:11 2014
+          Size: 9.19 MB
+          FMRI: pkg://solaris/web/server/apache-22@2.2.27,5.11-0.175.2.0.0.42.1:20140623T022811Z
+</pre>
+
+<p>OK, it's there. What about our customized <code>index.html</code> file?</p>
+
+<pre>
+root@zone2:~# <kbd>cat /var/apache2/2.2/htdocs/index.html </kbd>
+&lt;html&gt;&lt;body&gt;&lt;h1&gt;My Web Server!&lt;/h1&gt;&lt;/body&gt;&lt;/html&gt;
+</pre>
+
+<p>Is the server running?</p>
+
+<pre>
+root@zone2:~# <kbd>svcs apache22</kbd>
+STATE          STIME    FMRI
+disabled       14:07:48 svc:/network/http:apache22
+</pre>
+
+<p>Apparently, it is not... If you remember, when cloning a zone using 'zoneadm clone' we managed to preserve the webserver state, it was up and running after first boot. Why in this case it didn't happen? Well, remember that we had to go through profile creation procedure after we have booted the zone? That means that we created a completely new profile for the zone. If we wanted to start some services at the first boot, we had to create and edit the profile beforehand and use it during the installation process. Let's try to do that with another zone: <code>zone3</code>. </p>
+
+<pre>
+root@solaris:~# <kbd>zonecfg -z zone3 create -a /archive/zone1.uar </kbd>
+root@solaris:~# <kbd>sysconfig create-profile -o /root/zone3-profile</kbd>
+</pre>
+
+<p>After the usual screens (hostname, time zone, passwords, network-use the next available IP, like 10.0.2.23) you will see the report:</p>
+
+<pre>
+SC profile successfully generated as:
+/root/zone3-profile/sc_profile.xml
+
+Exiting System Configuration Tool. Log is available at:
+/system/volatile/sysconfig/sysconfig.log.16094
+</pre>
+
+<p>Now open the file <code>/root/zone3-profile/sc_profile.xml</code>, go to the end of that file and add the following lines (marked in bold) <em>before</em> the last line with <code>&lt;/service_bundle&gt;</code> :</p>
+
+<pre>
+<strong>  &lt;service version=&quot;1&quot; type=&quot;service&quot; name=&quot;network/http&quot;&gt;
+    &lt;instance enabled=&quot;true&quot; name=&quot;apache22&quot; /&gt;
+  &lt;/service&gt;</strong>
+&lt;/service_bundle&gt;
+</pre>
+
+<p>Of course, you can use this method to configure any other Solaris services to start at boot time.</p>
+
+<p>Now we have prepared everything for installation. </p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z zone3 install -a /archive/zone1.uar -c /root/zone3-profile/</kbd>
+The following ZFS file system(s) have been created:
+    rpool/zones/zone3
+Progress being logged to /var/log/zones/zoneadm.20141031T191312Z.zone3.install
+    Installing: This may take several minutes...
+ Install Log: /system/volatile/install.17017/install_log
+ AI Manifest: /tmp/manifest.zone3.D1aqnH.xml
+    Zonename: zone3
+Installation: Starting ...
+
+        Commencing transfer of stream: bc127592-25ff-c975-b947-9f2f1e01ed4a-0.zfs to rpool/zones/zone3/rpool
+        Completed transfer of stream: 'bc127592-25ff-c975-b947-9f2f1e01ed4a-0.zfs' from file:///archive/zone1.uar
+        Archive transfer completed
+Installation: Succeeded
+      Zone BE root dataset: rpool/zones/zone3/rpool/ROOT/solaris
+                     Cache: Using /var/pkg/publisher.
+Updating image format
+Image format already current.
+  Updating non-global zone: Linking to image /.
+Processing linked: 1/1 done
+  Updating non-global zone: Syncing packages.
+No updates necessary for this image. (zone:zone3)
+
+  Updating non-global zone: Zone updated.
+                    Result: Attach Succeeded.
+
+        Done: Installation completed in 139.070 seconds.
+  Next Steps: Boot the zone, then log into the zone console (zlogin -C)
+              to complete the configuration process.
+Log saved in non-global zone as /zones/zone3/root/var/log/zones/zoneadm.20141031T191312Z.zone3.install
+</pre>
+
+<p>Go ahead and boot the zone.</p>
+
+<pre>
+root@solaris:~# <kbd>zoneadm -z zone3 boot</kbd>
+root@solaris:~# <kbd>zlogin -C zone3</kbd>
+[Connected to zone 'zone3' console]
+Hostname: zone3
+Oct 31 15:21:06 zone3 sendmail[21150]: My unqualified host name (zone3) unknown; sleeping for retry
+
+zone3 console login: Oct 31 15:22:06 zone3 sendmail[21150]: unable to qualify my own domain name (zone3) -- using short name
+</pre>
+
+<p>Login and check the web server:</p>
+
+<pre>
+zone3 console login: <kbd>lab</kbd>
+Password: <kbd>oracle1</kbd>
+Last login: Fri Oct 31 12:12:16 on console
+Oracle Corporation      SunOS 5.11      11.2    June 2014
+lab@zone3:~$ <kbd>su -</kbd>
+Password: <kbd>solaris1</kbd>
+Oct 31 15:23:21 zone3 su: 'su root' succeeded for lab on /dev/console
+Oracle Corporation      SunOS 5.11      11.2    June 2014
+root@zone3:~# <kbd>svcs apache22</kbd>
+STATE          STIME    FMRI
+online         15:21:05 svc:/network/http:apache22
+</pre>
+
+<p>Great! It's running! You can also check it with Firefox by opening the zone's IP address 10.0.2.23. Most likely you will see "<strong>My Web Server!</strong>". </p>
+
+
+
+
+
+
+
+</body>
+</html>

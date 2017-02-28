@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Oracle Solaris 11 Kernel Zones</title>
+<meta name="generator" content="Bluefish 2.2.4" >
+<meta name="author" content="Pavel Anni" >
+<meta name="date" content="2015-08-20T13:19:56-0500" >
+<meta name="copyright" content="Oracle Corporation, 2011-2015">
+<link type="text/css" rel="stylesheet" href="css/lab.css" />
+</head>
+<body>
+
+<h1>Oracle Solaris 11 Kernel Zones Lab</h1>
+
+
+<p>There is a new virtualization technology called "Kernel Zones" which became available in Oracle Solaris 11.2. In this lab we will explore its new features and compare it to other Oracle virtualization technologies. </p>
+
+
+<p><strong>60 seconds of theory.</strong> Solaris Zones were first announced in 2005 in Solaris 10 and then became a popular way of managing application workloads. They are very flexible, extremely lightweight and provide very good isolation of resources. But Solaris Zones require that all applications in every zone run under the same version of OS Solaris, which runs on the global zone. In some situations it might become an unnecessary restriction. To answer this limitation, Solaris engineers created a new virtualization technology which allows you to run zones with different versions of Solaris under one global zone. This technology is now called "kernel zones" because they run their own kernels. We continue calling the earlier Solaris Zones technology "non-global" zones. </p>
+
+<p>In this lab we will compare various features of kernel zones and non-global zones side-by-side and analyze how and where we can use them. Please pay special attention to the command prompts: they indicate where we perform the operation. Our global zone is called '<code>solarislab</code>'; kernel zones will be called '<code>kzone1</code>', '<code>kzone2</code>', etc.; traditional non-global zones are called '<code>zone1</code>', '<code>zone2</code>', etc.</p>
+
+<h2>Basic configuration and installation</h2>
+
+<h3>Zone creation</h3>
+
+<p>Non-global zone:</p>
+<pre>
+root@solarislab:~# <kbd>zonecfg -z zone1 create</kbd>
+</pre>
+
+<p>Kernel zone:</p>
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z kzone1 create -t SYSsolaris-kz</kbd>
+</pre>
+
+<p>That's it! We just use a special "kernel zone" template to create a zone. Actually, in the first command we use the default 'SYSsolaris' profile as soon as we omitted that parameter. If you are curious, take a look at the '/etc/zones' directory to compare different profiles. You will also find that there is a special profile for Solaris 10 zones.</p>
+
+<h3>Default configuration</h3>
+
+<p>Non-global zone:</p>
+
+<pre>
+root@solarislab:/etc/zones# <kbd>zonecfg -z zone1 info</kbd>
+zonename: zone1
+zonepath: /system/zones/zone1
+brand: solaris
+autoboot: false
+autoshutdown: shutdown
+bootargs:
+file-mac-profile:
+pool:
+limitpriv:
+scheduling-class:
+ip-type: exclusive
+hostid:
+tenant:
+fs-allowed:
+anet:
+        linkname: net0
+        lower-link: auto
+        allowed-address not specified
+        configure-allowed-address: true
+        defrouter not specified
+        allowed-dhcp-cids not specified
+        link-protection: mac-nospoof
+        mac-address: auto
+        mac-prefix not specified
+        mac-slot not specified
+        vlan-id not specified
+        priority not specified
+        rxrings not specified
+        txrings not specified
+        mtu not specified
+        maxbw not specified
+        bwshare not specified
+        rxfanout not specified
+        vsi-typeid not specified
+        vsi-vers not specified
+        vsi-mgrid not specified
+        etsbw-lcl not specified
+        cos not specified
+        pkey not specified
+        linkmode not specified
+        evs not specified
+        vport not specified
+</pre>
+
+<p>Kernel zone:</p>
+
+<pre>
+root@solarislab:/etc/zones# <kbd>zonecfg -z kzone1 info</kbd>
+zonename: kzone1
+brand: solaris-kz
+autoboot: false
+autoshutdown: shutdown
+bootargs:
+pool:
+scheduling-class:
+hostid: 0x2e7d2173
+tenant:
+anet:
+        lower-link: auto
+        allowed-address not specified
+        configure-allowed-address: true
+        defrouter not specified
+        allowed-dhcp-cids not specified
+        link-protection: mac-nospoof
+        mac-address: auto
+        mac-prefix not specified
+        mac-slot not specified
+        vlan-id not specified
+        priority not specified
+        rxrings not specified
+        txrings not specified
+        mtu not specified
+        maxbw not specified
+        bwshare not specified
+        rxfanout not specified
+        vsi-typeid not specified
+        vsi-vers not specified
+        vsi-mgrid not specified
+        etsbw-lcl not specified
+        cos not specified
+        evs not specified
+        vport not specified
+        iov: off
+        lro: auto
+        id: 0
+device:
+        match not specified
+        storage: dev:/dev/zvol/dsk/rpool/VARSHARE/zones/kzone1/disk0
+        id: 0
+        bootpri: 0
+capped-memory:
+        physical: 2G
+</pre>
+
+<p>Here we see more difference between the two. First, we notice that the kernel zone has a different <em>brand</em>. It's a signal to Solaris kernel to treat this zone differently from the default "solaris" brand. Also we see that 'zonepath' parameter disappeared in the kernel zone. Where are we going to store the zone's root? Scroll down a little bit and find the 'device:' section. What do you see? Now you see that kernel zones keep their root directories not in a ZFS <em>file system</em>, but rather in a ZFS <em>volume</em> which looks like a block device. By default, Solaris creates a 16 Gigabyte volume for that in the '<code>rpool</code>' ZFS pool. Of course, you can change the size of the volume (during installation). </p>
+
+
+<p>Also take a look at the 'zoneadm list -cv' output:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+   - zone1            configured  /system/zones/zone1          solaris    excl
+   - kzone1           configured  -                            solaris-kz excl
+</pre>
+
+<p>Again, you see that we don't have a file system path specified for the kernel zone.</p>
+
+<h3>Zone installation</h3>
+
+<p>Now it's time to install both zones. We use exactly the same command for both kernel zones and non-global zones. Start with the kernel zone:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 install</kbd>
+Progress being logged to /var/log/zones/zoneadm.20150615T163032Z.kzone1.install
+pkg cache: Using /var/pkg/publisher.
+ Install Log: /system/volatile/install.17385/install_log
+ AI Manifest: /tmp/zoneadm16918.sKa4xH/devel-ai-manifest.xml
+  SC Profile: /usr/share/auto_install/sc_profiles/enable_sci.xml
+Installation: Starting ...
+
+        Creating IPS image
+        Installing packages from:
+            solaris
+                origin:  http://ipkg.us.oracle.com/solaris11/support/
+        The following licenses have been accepted and not displayed.
+        Please review the licenses for the following packages post-install:
+          consolidation/osnet/osnet-incorporation
+        Package licenses may be viewed using the command:
+          pkg info --license <pkg_fmri>
+
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                            451/451   63995/63995  598.3/598.3  2.2M/s
+
+PHASE                                          ITEMS
+Installing new actions                   87551/87551
+Updating package state database                 Done
+Updating package cache                           0/0
+Updating image state                            Done
+Creating fast lookup database                   Done
+Installation: Succeeded
+        Done: Installation completed in 716.730 seconds.
+
+</pre>
+
+<p>What if we want to install a different version of Solaris into the kernel zone? In the previous example we used the so called "direct installation" method. In other words, we used the same package repository that is configured in the global zone. To install a different version of Solaris, we have to use a separate installation media. For example, we can use Oracle Solaris 11.3 beta DVD ISO for that:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 install -b /share1/ISOs/sol-11_3-25-text-sparc.iso</kbd>
+</pre>
+
+<p>What do you think is going to happen in this case? You guessed it right: the kernel zone will boot from this DVD and the usual installation process will begin. You will go through the familiar questions: hostname, IP address, time zone, root password, etc. The process is no different from bare metal or logical domain Solaris installation. </p>
+
+
+<p>And now install the non-global zone:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z zone1 install</kbd>
+The following ZFS file system(s) have been created:
+    rpool/VARSHARE/zones/zone1
+Progress being logged to /var/log/zones/zoneadm.20150615T165123Z.zone1.install
+       Image: Preparing at /system/zones/zone1/root.
+
+ Install Log: /system/volatile/install.18535/install_log
+ AI Manifest: /tmp/manifest.xml.Z.aylK
+  SC Profile: /usr/share/auto_install/sc_profiles/enable_sci.xml
+    Zonename: zone1
+Installation: Starting ...
+
+        Creating IPS image
+Startup linked: 1/1 done
+        Installing packages from:
+            solaris
+                origin:  http://ipkg.us.oracle.com/solaris11/support/
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                            280/280   53151/53151  374.3/374.3  3.4M/s
+
+PHASE                                          ITEMS
+Installing new actions                   71074/71074
+Updating package state database                 Done
+Updating package cache                           0/0
+Updating image state                            Done
+Creating fast lookup database                   Done
+Updating package cache                           1/1
+Installation: Succeeded
+
+        Note: Man pages can be obtained by installing pkg:/system/manual
+
+ done.
+
+        Done: Installation completed in 485.377 seconds.
+
+
+  Next Steps: Boot the zone, then log into the zone console (zlogin -C)
+
+              to complete the configuration process.
+
+Log saved in non-global zone as /system/zones/zone1/root/var/log/zones/zoneadm.20150615T165123Z.zone1.install
+</pre>
+
+<p>Let's look at what's different between these two listings. First, in the kernel zone we install more packages (451 vs. 280). Also, if you look at the progress line during the installation you may notice that packages like hardware drivers are being installed--that's a big difference from non-global zones. </p>
+
+<p>Now we can boot both zones and complete the installation by configuring host names, root passwords, time zones, etc. (in case of installing the kernel zone from media, we have done that already). There is almost no difference in these processes, they are all very familiar. To do that login into each zone's console and fill the screens that follow.</p>
+
+<pre>
+root@solarislab:~# <kbd>zlogin -C zone1</kbd>
+
+<em>and then:</em>
+
+root@solarislab:~# <kbd>zlogin -C kzone1</kbd>
+</pre>
+
+<p>All the necessary information will be provided by your instructor. Make sure you choose "Manual" network configuration, not "Automatic", which is the default. You will need: IP address, netmask, default router address. Set the time zone and root password to the same values as in the global zone.  </p>
+
+<h2>Solaris Zones inside and outside</h2>
+
+<p>Now as we have installed and configured our zones, let's login into both and see how they look from inside. Remember: in the listings below the kernel zone's hostname is '<code>kzone1</code>', non-global zone's one is '<code>zone1</code>'.</p>
+
+<h3>Processes</h3>
+
+<p>We start with some basic process-related commands. For example, how many processes are running just after the zone is booted?</p>
+
+<pre>
+root@kzone1:~# <kbd>ps -ef | wc -l</kbd>
+      56
+</pre>
+
+<pre>root@zone1:~# <kbd>ps -ef | wc -l</kbd>
+      36
+</pre>
+
+<p>You see, there some extra processes running in the kernel zone. Let's sort them by PID and look at the first 20 of them:</p>
+
+<pre>root@kzone1:~# <kbd>ps -ef | sort -k 2 | head -20</kbd>
+    root     0     0   0 15:16:13 ?           0:00 sched
+    root     1     0   0 15:16:13 ?           0:00 /usr/sbin/init
+    root     2     0   0 15:16:13 ?           0:00 pageout
+    root     3     0   0 15:16:13 ?           0:01 fsflush
+    root     5     0   0 15:16:11 ?           0:03 zpool-rpool
+    root     6     0   0 15:16:13 ?           0:00 kmem_task
+    root     7     0   0 15:16:13 ?           0:00 intrd
+    root     8     0   0 15:16:13 ?           0:00 vmtasks
+    root     9     0   0 15:16:13 ?           0:00 postwaittq
+    root    13     1   0 15:16:16 ?           0:10 /lib/svc/bin/svc.startd
+    root    15     1   0 15:16:16 ?           2:03 /lib/svc/bin/svc.configd
+  netcfg    50     1   0 15:17:45 ?           0:00 /lib/inet/netcfgd
+   dladm    65     1   0 15:17:54 ?           0:00 /usr/sbin/dlmgmtd
+  netadm    84     1   0 15:18:06 ?           0:00 /lib/inet/ipmgmtd
+    root    97     1   0 15:18:08 ?           0:00 /lib/inet/in.mpathd
+    root   122     1   0 15:18:12 ?           0:00 /usr/lib/pfexecd
+    root   165     1   0 15:18:25 ?           0:00 /usr/lib/sysevent/syseventd
+  daemon   202     1   0 15:18:26 ?           0:00 /usr/lib/utmpd
+    root   217     1   0 15:18:27 ?           0:00 /usr/lib/zones/zonestatd
+    root   221     1   0 15:18:27 ?           0:00 /usr/lib/rad/rad -sp
+</pre>
+
+<pre>root@zone1:~# <kbd>ps -ef | sort -k 2 | head -20</kbd>
+     UID   PID  PPID   C    STIME TTY         TIME CMD
+    root 21253 21253   0 14:28:07 ?           0:00 zsched
+    root 21971 21253   0 14:28:16 ?           0:00 /usr/sbin/init
+    root 22151 21253   0 14:28:16 ?           0:04 /lib/svc/bin/svc.startd
+    root 22153 21253   0 14:28:16 ?           1:06 /lib/svc/bin/svc.configd
+  netcfg 22186 21253   0 14:29:12 ?           0:00 /lib/inet/netcfgd
+  daemon 22229 21253   0 14:29:15 ?           0:00 /lib/crypto/kcfd
+    root 22236 21253   0 14:29:16 ?           0:00 /usr/lib/pfexecd
+  netadm 22252 21253   0 14:29:17 ?           0:00 /lib/inet/ipmgmtd
+    root 22266 21253   0 14:29:17 ?           0:00 /lib/inet/in.mpathd
+  daemon 22272 21253   0 14:29:18 ?           0:00 /usr/lib/utmpd
+    root 22287 21253   0 14:29:18 ?           0:00 /usr/lib/rad/rad -sp
+    root 22333 21253   0 14:29:18 ?           0:00 /usr/lib/dbus-daemon --system
+  netadm 22771 21253   0 14:30:43 ?           0:00 /lib/inet/nwamd
+    root 22892 21253   0 14:30:46 ?           0:00 /usr/lib/zones/zoneproxy-client -s localhost:1008
+    root 22899 21253   0 14:30:47 ?           0:00 /usr/sbin/nscd
+    root 22955 21253   0 14:30:49 ?           0:00 /usr/sbin/cron
+  daemon 23010 21253   0 14:30:51 ?           0:00 /usr/sbin/rpcbind
+    root 23040 21253   0 14:30:51 ?           0:00 /usr/lib/inet/in.ndpd
+    root 23048 21253   0 14:30:52 ?           0:00 /usr/lib/autofs/automountd
+</pre>
+
+<p>Now you see the big difference between kernel zones and non-global zones. In non-global zones all the processes are part of the global zone's process space, so their PIDs start with some big number. In kernel zones they start with 0 and the list is not much different from the process list in the global zone. </p>
+
+<p>Now let's look at them from the global zone's perspective. Use the '-Z' switch for 'ps' command to see zone's names next to the processes.</p>
+
+<pre>
+root@solarislab:~# <kbd>ps -efZ</kbd>
+    ZONE      UID   PID  PPID   C    STIME TTY         TIME CMD
+  global     root     0     0   0   Jul 29 ?           0:10 sched
+  global     root     5     0   0   Jul 29 ?           7:26 zpool-rpool
+  global     root     6     0   0   Jul 29 ?           0:31 kmem_task
+  global     root     1     0   0   Jul 29 ?           0:01 /usr/sbin/init
+  global     root     2     0   0   Jul 29 ?           0:00 pageout
+  global     root     3     0   0   Jul 29 ?          11:32 fsflush
+  global     root     7     0   0   Jul 29 ?           0:12 intrd
+  global     root     8     0   0   Jul 29 ?           1:02 vmtasks
+. . . (skipped) . . .
+   zone1     root 21253     1   0 12:28:07 ?           0:00 zsched
+  global     root  1214     1   0   Jul 29 ?           0:03 /usr/lib/ep/eptelemon
+  global     root  1116     1   0   Jul 29 ?           0:21 /usr/lib/ep/epdetector dcdc cpu0
+  kzone1     root 19817     1   0 11:55:11 ?           0:00 zsched
+. . . (skipped) . . .
+  kzone1     root 19995 19817   0 11:55:12 ?           6:23 /usr/lib/kzhost
+  global  pkg5srv 20737     1   0 12:19:48 ?           0:16 /usr/apache2/2.2/bin/htcacheclean -d20160 -i -l 2048M -n -p /var/cache/pkg/sysr
+  global  pkg5srv 20742 20739   0 12:19:49 ?           0:21 /usr/apache2/2.2/bin/64/httpd.worker -f /system/volatile/pkg/sysrepo/sysrepo_ht
+  global  pkg5srv 20743 20739   0 12:19:49 ?           0:22 /usr/apache2/2.2/bin/64/httpd.worker -f /system/volatile/pkg/sysrepo/sysrepo_ht
+   zone1     root 22151     1   0 12:28:16 ?           0:04 /lib/svc/bin/svc.startd
+   zone1   netcfg 22186     1   0 12:29:12 ?           0:00 /lib/inet/netcfgd
+  global  pkg5srv 20746     1   0 12:19:50 ?           0:00 /usr/lib/zones/zoneproxyd
+   zone1     root 22153     1   0 12:28:16 ?           1:06 /lib/svc/bin/svc.configd
+  global     root 21061     1   0 12:28:04 ?           0:01 zoneadmd -z zone1
+   zone1     root 21971 21253   0 12:28:16 ?           0:00 /usr/sbin/init
+   zone1     root 22266     1   0 12:29:17 ?           0:00 /lib/inet/in.mpathd
+. . . (skipped) . . .
+  global     root 23168 14852   0 12:32:01 pts/2       0:00 ps -efZ
+</pre>
+
+<p>Now this gets interesting! We see a lot of processes in <code>zone1</code>, and (no surprise here) their PIDs are all the same that we just saw from inside the zone. As for <code>kzone1</code>, we see only 2 processes. Just to check, let's use '<code>-z <em>zonename</em></code>' parameter:</p>
+
+<pre>
+root@solarislab:~# ps -f -Z -z kzone1
+    ZONE      UID   PID  PPID   C    STIME TTY         TIME CMD
+  kzone1     root 19817     1   0 11:55:11 ?           0:00 zsched
+  kzone1     root 19995 19817   0 11:55:12 ?           6:28 /usr/lib/kzhost
+</pre>
+
+<p>That's right! Just two <code>kzone1</code>'s processes are visible from the global zone. Actually, kzhost is just a big process that keeps all the kernel zone's processes inside. How big is is? Yes, you guessed it right again--it takes the amount of memory that is configured for <code>kzone1</code>. You can check it with the following <code>ps</code> command:</p>
+
+<pre>
+root@solarislab:~# <kbd>ps -o pid,vsz,rss,comm -z kzone1</kbd>
+  PID  VSZ  RSS COMMAND
+19817    0    0 zsched
+19995 2120528 2119512 /usr/lib/kzhost
+</pre>
+
+<p>The bottom line for these experiments: 
+
+<ul>
+<li>non-global zone's processes are visible from the global zone and belong to its <em>process space</em></li>
+<li>kernel zone's processes are visible only inside the zone and they have <em>their own</em> process space</li>
+</ul></p>
+
+<p>When choosing between non-global zones and kernel zones, please keep in mind this major difference. </p>
+
+<h3>Processors and Memory</h3>
+
+<p>Let's move on and figure out what resources are available in the zones. What is the output of '<code>psrinfo(1M)</code>'?</p>
+
+<pre>
+root@kzone1:~# <kbd>psrinfo</kbd>
+0       on-line   since 06/15/2015 15:16:12
+</pre>
+
+<pre>
+root@zone1:~# <kbd>psrinfo</kbd>
+0       on-line   since 06/10/2015 17:30:04
+1       on-line   since 06/10/2015 17:30:07
+2       on-line   since 06/10/2015 17:30:07
+3       on-line   since 06/10/2015 17:30:07
+4       on-line   since 06/10/2015 17:30:07
+5       on-line   since 06/10/2015 17:30:07
+6       on-line   since 06/10/2015 17:30:07
+7       on-line   since 06/10/2015 17:30:07
+</pre>
+
+<p>You see the difference? By default Solaris 11.2 assigns only one virtual CPU to a kernel zone (you can change that with <code>zonecfg</code> command). In Solaris 11.3 this default has been changed to 4 virtual CPUs. A non-global zone by default can use all the CPUs available in the global zone. Run the same <code>psrinfo</code> command in the global zone and compare the results. </p>
+
+<p>What does it mean for us? Non-global zones have more flexibility in terms of resource control. By default you give them what's available and they share all the resources with the global zone. Later you can <em>limit</em> their resource usage or assign specific groups of CPUs. It's completely opposite in kernel zones. By default they get the minimum, just one virtual CPU. You can change that if/when you need more, even during the initial configuration phase. </p>
+
+<p>What about memory? How much is available? As you can see below, the situation is very similar.</p>
+
+<pre>
+root@kzone1:~# <kbd>prtconf | grep Memory</kbd>
+Memory size: 2048 Megabytes
+</pre>
+
+<pre>
+root@zone1:~# <kbd>prtconf | grep Memory</kbd>
+prtconf: devinfo facility not available
+Memory size: 16384 Megabytes
+</pre>
+
+<pre>
+root@solarislab:~# <kbd>prtconf | grep Memory</kbd>
+Memory size: 16384 Megabytes
+</pre>
+
+<p>The same thing here: the non-global zone by default can use the whole physical memory available in the global zone. For the kernel zone we have to specify how much memory we want to assign to it. By default it's 2 Gigabytes in 11.2 and 4 Gigabytes in 11.3.</p>
+
+<!-- <p>Another interesting lesson we can learn from this research is that in spite of having some virtual CPUs assigned to the kernel zone, we didn't lose them in the global zone. This is quite different from what we see in LDoms where we have to remove some CPUs from the control domain before assigning them to guest domains.</p> -->
+
+<h3>Virtualization support</h3>
+
+<p>Also it's interesting to take a look at what 'virtinfo(1M)' reports in each case: kernel zone, non-global zone and global zone. </p>
+
+<pre>
+root@kzone1:~# <kbd>virtinfo</kbd>
+NAME            CLASS
+kernel-zone     current
+logical-domain  parent
+non-global-zone supported
+</pre>
+
+<pre>
+root@zone1:~# <kbd>virtinfo</kbd>
+NAME            CLASS
+non-global-zone current
+logical-domain  parent
+logical-domain  supported
+</pre>
+
+<pre>
+root@solarislab:~# <kbd>virtinfo</kbd>
+NAME            CLASS
+logical-domain  current
+non-global-zone supported
+kernel-zone     supported
+logical-domain  supported
+</pre>
+
+<p>You can see that you can even create non-global zones inside kernel zones! You can do that, but remember: "Don't over-virtualize!" </p>
+
+<p>Another interesting test: try to run the '<code>zonename</code>' command in the global zone, kernel zone and non-global zone. What does it show in each of them?</p>
+
+<pre>
+root@solarislab:~# <kbd>zonename</kbd>
+global
+root@kzone1:~# <kbd>zonename</kbd>
+global
+root@zone1:~# <kbd>zonename</kbd>
+zone1
+</pre>
+
+<p>Interesting! That means it's really hard to distinguish a kernel zone from a "true" global zone. Your applications will never notice that they are running in a virtualized environment.</p>
+
+<!-- 
+
+Zone installation inside the KZ below is hidden for now because of the bug which doesn't allow to suspend the KZ if there are extra MAC addresses configured.
+
+<p>You can see that non-global zones are supported in kernel zones! Why don't we create one right now?</p>
+
+<pre>
+root@kzone1:~# <kbd>zonecfg -z kz-zone1 create</kbd>
+root@kzone1:~# <kbd>zoneadm -z kz-zone1 install</kbd>
+The following ZFS file system(s) have been created:
+    rpool/VARSHARE/zones/kz-zone1
+Progress being logged to /var/log/zones/zoneadm.20150617T210809Z.kz-zone1.install
+       Image: Preparing at /system/zones/kz-zone1/root.
+
+ Install Log: /system/volatile/install.2692/install_log
+ AI Manifest: /tmp/manifest.xml.R_aapf
+  SC Profile: /usr/share/auto_install/sc_profiles/enable_sci.xml
+    Zonename: kz-zone1
+Installation: Starting ...
+
+        Creating IPS image
+Startup linked: 1/1 done
+        Installing packages from:
+            solaris
+                origin:  http://ipkg.us.oracle.com/solaris11/support/
+DOWNLOAD                                PKGS         FILES    XFER (MB)   SPEED
+Completed                            280/280   53151/53151  374.3/374.3  1.5M/s
+
+PHASE                                          ITEMS
+Installing new actions                   71074/71074
+Updating package state database                 Done
+Updating package cache                           0/0
+Updating image state                            Done
+Creating fast lookup database                   Done
+Updating package cache                           1/1
+Installation: Succeeded
+
+        Note: Man pages can be obtained by installing pkg:/system/manual
+
+ done.
+
+        Done: Installation completed in 588.873 seconds.
+
+
+  Next Steps: Boot the zone, then log into the zone console (zlogin -C)
+
+              to complete the configuration process.
+
+Log saved in non-global zone as /system/zones/kz-zone1/root/var/log/zones/zoneadm.20150617T210809Z.kz-zone1.install
+</pre>
+
+<p>Now boot the zone:</p>
+
+<pre>
+root@kzone1:~# <kbd>zoneadm -z kz-zone1 boot</kbd>
+zone 'kz-zone1': error: net0: failed to create VNIC: operation not supported
+zoneadm: zone kz-zone1: call to zoneadmd(1M) failed: zoneadmd(1M) returned an error 9 (zone state change failed)
+</pre>
+
+<p>Oops! What's that? Those of you who are familiar with LDoms, might have guessed already: there is a problem with VNIC creation and the reason most likely is that we can't assign another MAC address to the VNIC used by the kernel zone. To fix that we have to go the global zone and change the <code>kzone1</code>'s configuration.</p>
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z kzone1</kbd>
+zonecfg:kzone1> <kbd>info anet</kbd>
+anet:
+        lower-link: auto
+        allowed-address not specified
+        configure-allowed-address: true
+        defrouter not specified
+        allowed-dhcp-cids not specified
+        link-protection: mac-nospoof
+        mac-address: auto
+        auto-mac-address: 2:8:20:2a:2f:f4
+        mac-prefix not specified
+        mac-slot not specified
+        vlan-id not specified
+        priority not specified
+        rxrings not specified
+        txrings not specified
+        mtu not specified
+        maxbw not specified
+        bwshare not specified
+        rxfanout not specified
+        vsi-typeid not specified
+        vsi-vers not specified
+        vsi-mgrid not specified
+        etsbw-lcl not specified
+        cos not specified
+        evs not specified
+        vport not specified
+        iov: off
+        lro: auto
+        id: 0
+zonecfg:kzone1> <kbd>select anet id=0</kbd>
+zonecfg:kzone1:anet> <kbd>add mac</kbd>
+zonecfg:kzone1:anet:mac> <kbd>set mac-address=auto</kbd>
+zonecfg:kzone1:anet:mac> <kbd>end</kbd>
+zonecfg:kzone1:anet> <kbd>end</kbd>
+zonecfg:kzone1> <kbd>commit</kbd>
+zonecfg:kzone1> <kbd>info anet</kbd>
+anet:
+        lower-link: auto
+        allowed-address not specified
+        configure-allowed-address: true
+        defrouter not specified
+        allowed-dhcp-cids not specified
+        link-protection: mac-nospoof
+        mac-address: auto
+        auto-mac-address: 2:8:20:2a:2f:f4
+        mac-prefix not specified
+        mac-slot not specified
+        vlan-id not specified
+        priority not specified
+        rxrings not specified
+        txrings not specified
+        mtu not specified
+        maxbw not specified
+        bwshare not specified
+        rxfanout not specified
+        vsi-typeid not specified
+        vsi-vers not specified
+        vsi-mgrid not specified
+        etsbw-lcl not specified
+        cos not specified
+        evs not specified
+        vport not specified
+        iov: off
+        lro: auto
+        id: 0
+        mac:
+                mac-address: auto
+                mac-prefix not specified
+                id: 0
+zonecfg:kzone1> <kbd>exit</kbd>
+</pre>
+
+<p>Now go back to <code>kzone1</code> and before rebooting check the mac addresses assigned to its VNIC:</p>
+
+<pre>
+root@kzone1:~# <kbd>dladm show-phys -m</kbd>
+LINK                SLOT     ADDRESS            INUSE CLIENT
+net0                primary  2:8:20:2a:2f:f4    yes   net0
+</pre>
+
+<p>Now reboot <code>kzone1</code> and check it again:</p>
+
+<pre>
+root@kzone1:~# <kbd>reboot</kbd>
+Jun 17 18:02:24 kzone1 reboot: initiated by lab on /dev/console
+....
+root@kzone1:~# <kbd>dladm show-phys -m</kbd>
+LINK                SLOT     ADDRESS            INUSE CLIENT
+net0                primary  2:8:20:2a:2f:f4    yes   net0
+                    1        2:8:20:28:71:c1    no    --
+</pre>
+
+<p>Try to boot kz-zone1 again:</p>
+
+<pre>
+root@kzone1:~# <kbd>zoneadm -z kz-zone1 boot</kbd>
+root@kzone1:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+   1 kz-zone1         running     /system/zones/kz-zone1       solaris    excl
+</pre>
+
+<p>This is much better! Did you notice the other zone name, besides '<code>kz-zone1</code>'? Yes, it's '<code>global</code>'. Check again: </p> 
+
+<pre>
+root@kzone1:~# <kbd>zonename</kbd>
+global
+</pre>
+
+<p>This is interesting. That means that from inside the zone we can't easily distinguish is from a real global zone. Think about some situations where it can help. </p>
+
+<p>What about the MAC addresses?</p>
+
+<pre>
+root@kzone1:~# dladm show-phys -m
+LINK                SLOT     ADDRESS            INUSE CLIENT
+net0                primary  2:8:20:2a:2f:f4    yes   net0
+                    1        2:8:20:28:71:c1    yes   net0
+</pre>
+
+<p>Now you see two MAC addresses assigned to the link and they are both in use.</p>
+
+<p>You can compare this to what you see inside the non-global zone. </p>
+
+<pre>
+root@zone1:~# <kbd>dladm show-phys</kbd>
+root@zone1:~# 
+</pre>
+
+<p>Nothing. There are no physical interfaces in the non-global zone. All NICs are virtual:</p>
+
+<pre>
+root@zone1:~# <kbd>dladm show-vnic</kbd>
+LINK            OVER           SPEED  MACADDRESS        MACADDRTYPE IDS
+net0            ?              1000   2:8:20:e5:a1:18   random      VID:0
+</pre>
+
+<p>Compare that to the kernel zone, it's just the opposite:</p>
+
+<pre>
+root@kzone1:~# <kbd>dladm show-vnic</kbd>
+root@kzone1:~# 
+root@kzone1:~# <kbd>dladm show-phys</kbd>
+LINK              MEDIA                STATE      SPEED  DUPLEX    DEVICE
+net0              Ethernet             up         1000   full      zvnet0
+</pre>
+
+ -->
+ 
+ 
+<h3>Packages</h3>
+
+<p>One of the great things about non-global zones is that you can manage software packages in them both from inside and outside. You can install packages being logged in a non-global zone, but more importantly, you can update, install and uninstall packages from the global zone. Normally, when you do '<kbd>pkg update</kbd>' in the global zone, all installed non-global zones are being updated too. You can install packages recursively into the zones by using '<kbd>pkg install -r</kbd>' command. Even more, you can name the specific zones you want to install the packages into, with '<kbd>-z <em>zonename</em></kbd>' parameter, or exclude some zones with '<kbd>-Z <em>zonename</em></kbd>'. What's important, you can do that even when the zones are not running. That's a big advantage of non-global zones in software management. </p>
+
+<p>As you might have guessed already, it's different in kernel zones. As soon as they have a separate block device with a file system, not available from the global zone, we can't update their packages without logging into the kernel zone. All package-related commands--install, update, uninstall--should be performed from within the kernel zone.</p>
+
+<p>Comparing software management operations in non-global zones and kernel zones, we can see that because non-global zones are more tightly integrated with the global zone, it gives us more flexibility in package operations. Kernel zones are more isolated by design (separate kernel, ZFS pool and process space), so they are treated as separate Solaris instances. Which approach is better--you decide, depending on your particular situation and requirements.</p>
+
+<h2>Kernel Zones suspend and resume capability</h2>
+
+<p>One of the coolest Kernel Zones features is their ability to suspend and resume operations. You can use this feature either to "warm migrate" a kernel zone from one system to another, or to preserve your application's state while rebooting the global zone.</p>
+
+<p>To be able to use this capability we have to configure the storage space where we keep the suspended zone. First check if it's configured already and then add the path to file's location.</p>
+
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z kzone1 info suspend</kbd>
+root@solarislab:~# <kbd>zonecfg -z kzone1</kbd>
+zonecfg:kzone1> <kbd>add suspend</kbd>
+zonecfg:kzone1:suspend> <kbd>set path=/system/zones/kzone1/suspend</kbd>
+zonecfg:kzone1:suspend> <kbd>end</kbd>
+zonecfg:kzone1> <kbd>exit</kbd>
+root@solarislab:~# <kbd>zonecfg -z kzone1 info suspend</kbd>
+suspend:
+        path: /system/zones/kzone1/suspend
+        storage not specified
+</pre>
+
+<p>Good. Now we can try to suspend the kernel zone.</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 suspend</kbd>
+root@solarislab:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+   5 zone1            running     /system/zones/zone1          solaris    excl
+   - kzone1           installed   -                            solaris-kz excl
+</pre>
+
+<p>So what? It doesn't look very spectacular, does it? Note that <code>kzone1</code> is not in any special "suspended" status, it's just "installed", like if we just shut it down. How can we resume it? OK, according to the zones' lifecycle, from the "installed" state we can "boot" the zone. There is no special "resume" command.</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 boot</kbd>
+root@solarislab:~# <kbd>zoneadm list -cv</kbd>
+  ID NAME             STATUS      PATH                         BRAND      IP
+   0 global           running     /                            solaris    shared
+   5 zone1            running     /system/zones/zone1          solaris    excl
+   7 kzone1           running     -                            solaris-kz excl
+</pre>
+
+<p>Again, nothing spectacular. We need something to see how the zone is getting suspended and resumed. Open another terminal window, login to the host (global zone) and then to <code>kzone1</code>. Inside <code>kzone1</code> start a simple script that prints out date every second.</p>
+
+<pre>
+root@solarislab:~# <kbd>zlogin -C kzone1</kbd>
+[Connected to zone 'kzone1' console]
+
+kzone11-3 console login: <kbd>lab</kbd>
+Password: <kbd>oracle1</kbd> (not shown)
+Last login: Tue Aug  4 15:09:04 2015 on console
+Oracle Corporation      SunOS 5.11      11.3    June 2015
+lab@kzone11-3:~$ <kbd>while true; do date ; sleep 1 ; done</kbd>
+Wednesday, August  5, 2015 02:35:46 PM EDT
+Wednesday, August  5, 2015 02:35:47 PM EDT
+Wednesday, August  5, 2015 02:35:48 PM EDT
+Wednesday, August  5, 2015 02:35:49 PM EDT
+Wednesday, August  5, 2015 02:35:50 PM EDT
+Wednesday, August  5, 2015 02:35:51 PM EDT
+. . . (it goes on and on and on)
+</pre>
+
+<p>Now switch to the previous terminal session in the global zone and suspend and resume <code>kzone1</code> again, while watching what's going on in the second window (in <code>kzone1</code>).</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 suspend</kbd>
+root@solarislab:~# <kbd>zoneadm -z kzone1 boot</kbd>
+</pre>
+
+<p>In the second window at the same time:</p>
+
+<pre>
+lab@kzone1:~$ <kbd>while true; do date ; sleep 1 ; done</kbd>
+Wednesday, August  5, 2015 02:42:04 PM EDT
+Wednesday, August  5, 2015 02:42:05 PM EDT
+Wednesday, August  5, 2015 02:42:06 PM EDT
+Wednesday, August  5, 2015 02:42:07 PM EDT
+Wednesday, August  5, 2015 02:42:08 PM EDT
+Wednesday, August  5, 2015 02:42:09 PM EDT
+Wednesday, August  5, 2015 02:42:10 PM EDT
+
+[NOTICE: Zone suspending]
+OSQ: suspending devices...
+        suspending ORCL,kz-zvterm@0 (aka zvterm)
+        suspending ORCL,kz-zvblk@0 (aka zvblk)
+        suspending zvcntrl@0
+        suspending zvnet@0
+        suspending zvsdir@0
+        suspending ORCL,kz-extenders@ff (aka zvnex)
+
+[NOTICE: Zone halted]
+
+[NOTICE: Zone resuming]
+        resuming ORCL,kz-extenders@ff (aka zvnex)
+        resuming zvsdir@0
+        resuming zvnet@0
+        resuming zvcntrl@0
+        resuming ORCL,kz-zvblk@0 (aka zvblk)
+        resuming ORCL,kz-zvterm@0 (aka zvterm)
+OSQ: resume devices completed
+Wednesday, August  5, 2015 02:42:11 PM EDT
+Wednesday, August  5, 2015 02:42:12 PM EDT
+Wednesday, August  5, 2015 02:42:13 PM EDT
+Wednesday, August  5, 2015 02:42:14 PM EDT
+Wednesday, August  5, 2015 02:42:15 PM EDT
+Wednesday, August  5, 2015 02:42:16 PM EDT
+^C
+</pre>
+
+<p>This is really interesting! Now we see that the zone has been suspended and then resumed and continued the script from the point where it was left. That was definitely not possible with traditional non-global zones and now we can do this with kernel zones. Think about it: how can you use it with your applications? What might be a good test to see if they are really suspended and resumed?</p> 
+
+<p>Another important moment is timekeeping during this operation. Take a closer look at the time stamps above. What do you see? You see that the zone resumed its operation <em>exactly</em> from the second it was suspended. Compare the time stamps (output of the '<code>date</code>' command) in <code>kzone1</code> and in the global zone and note the time difference. No surprise here: the zone was not running for several seconds  (or more) and it started from its last status. Our recommendation would be to configure NTP client in the kernel zone which you are going to suspend and resume. You may want to force clock sync immediately after resume with a command like this:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone1 boot ; zlogin kzone1 "svcadm disable ntp; ntpdate <em>ntpserver</em>; svcadm enable ntp"</kbd>
+</pre>
+
+<p><strong>Note: </strong>The above applies to Oracle Solaris 11.2. In Oracle Solaris 11.3 time synchronization in kernel zones after resume is done automatically. </p>
+
+<h2>Kernel Zone cloning</h2>
+
+<p>Sometimes we want to create a zone, install and configure applications in it and use it as a template: whether it's for scaling out the application (e.g. load balancing), or for distributing it to other locations, or for using it for testing and training purposes. There are several different ways to do that. You can use different technologies for that: </p>
+<ul>
+<li>zone cloning feature ('<code>zoneadm clone</code>' command) </li>
+<li>Automated Installer mechanisms (manifests and profiles)</li>
+<li>Unified Archives (available since 11.2)</li>
+</ul> 
+
+<p>In this lab we will explore the third method as it's the most flexible. </p>
+
+<p>So, we have a kernel zone already and we want to create a clone of it. First, we create a Unified Archive:</p>
+
+<pre>
+root@solarislab:~# <kbd>archiveadm create /share1/uar/kzone2.uar -z kzone2</kbd>
+</pre>
+
+<p>Then we create a new kernel zone with zonecfg, but we use the UAR as a template:</p>
+
+<pre>
+root@solarislab:~# <kbd>zonecfg -z kzone3 create -a /share1/uar/kzone2.uar -z kzone2</kbd>
+</pre>
+
+<p>And then install the zone from that UAR:</p>
+
+<pre>
+root@solarislab:~# <kbd>zoneadm -z kzone3 install -a /share1/uar/kzone2.uar -z kzone2</kbd>
+</pre>
+
+<p>That's it! Now you are going to boot the zone, login to its console and go through the initial configuration process. Remember, when installing from a UAR, we remove all individual parameters like hostname, IP address and root password. Sometimes it's more convenient to create this profile beforehand with 'sysconfig create-profile' and then use it during installation. In that case, your new zone will be ready to use after the first boot.</p>
+
+</body>
+</html>

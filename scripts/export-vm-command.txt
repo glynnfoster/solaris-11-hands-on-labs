@@ -1,0 +1,1 @@
+VBoxManage export "s11.2-ai-client" -o s11.2.ova --vsys 0 --product "Oracle Solaris" --producturl "http://oracle.com/solaris" --vendor "Oracle Corp." --vendorurl "http://oracle.com" --version "11.2" --eulafile /home/panni/Projects/Oracle\ Solaris\ 11\ Hands-on\ Labs/OTN_Solaris_License.txt 
